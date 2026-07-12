@@ -59,6 +59,25 @@ venv/bin/python eval/test_report.py                          # standalone tests
 Per-decision thinking times require traces recorded at `--level logs` (RESULT-level
 traces carry no decision records).
 
+## Game-record rendering / record-based replay
+Render one match trace as a **human-readable game record** to review "why did this
+side win/lose" and "was each decision reasonable" at the single-match level. Card
+ids and attack ids are resolved to names via the engine masters
+(`all_card_data()` / `all_attack()`) and the `data/*_Card_Data.csv` files (unknown
+ids fall back to `#<id>`); each decision is shown from the acting side's viewpoint
+(E4, opponent hand hidden) with its legal moves and chosen move. The engine takes
+no seed (E1), so this recorded trace is the only faithful replay.
+```bash
+venv/bin/python eval/replay.py eval/traces/match.jsonl            # full record (ja names)
+venv/bin/python eval/replay.py <trace.jsonl> --lang en            # English names
+venv/bin/python eval/replay.py <trace.jsonl> --scenes             # decisive scenes only
+venv/bin/python eval/replay.py <trace.jsonl> --scenes --hp-threshold 60
+venv/bin/python eval/test_replay.py                               # standalone tests
+```
+`--scenes` extracts decisive decisions — knockouts, large HP swings
+(`--hp-threshold`), and the last few decisions before the result. Rendering needs a
+trace recorded at `--level logs` (RESULT-level traces carry no decision records).
+
 ## Build a submission
 ```bash
 bash scripts/build_submission.sh      # -> submission.tar.gz (main.py + deck.csv + cg/)
