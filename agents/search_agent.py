@@ -12,8 +12,8 @@ Two properties matter most and are guaranteed here:
 
 - **One-ply lookahead.** For a single-select decision every legal option is a
   candidate; each is played on a *search copy* of the current position, the
-  resulting observation is scored (:func:`default_evaluate`, a provisional
-  prize/HP differential — the damage-based function is a later child Issue), and
+  resulting observation is scored (:func:`damage_based_evaluate`, a damage-based
+  perspective value reusing the R4 scoring and weakness/resistance calc), and
   the highest-scoring option is chosen.
 - **Outermost random fallback (the whole point of R1).** Any failure whatsoever
   — an observation that can't be reconstructed, a ``search_begin`` that rejects
@@ -38,12 +38,14 @@ from typing import Callable, Optional, Sequence
 
 from cg.api import Observation, PlayerState
 
+from agents import damage
 from agents.base import Agent, is_valid_selection, legal_random_sample, read_deck_csv
+from agents.rule_based import evaluate_position
 
 # An evaluator scores a resulting :class:`~cg.api.Observation` from the acting
-# player's perspective (higher is better for ``your_index``). Kept pluggable so
-# the damage-based evaluation function (a later B-line child Issue) can replace
-# the provisional default without touching the search/fallback machinery.
+# player's perspective (higher is better for ``your_index``). Kept pluggable: the
+# default is :func:`damage_based_evaluate` (SOT-1658, damage-based); any callable
+# with this signature can replace it without touching the search/fallback machinery.
 Evaluator = Callable[[Observation, int], float]
 
 # default_evaluate weights: winning dominates everything, then prize progress
@@ -94,6 +96,126 @@ def default_evaluate(observation: Observation, your_index: int) -> float:
     prize_term = (len(opp.prize) - len(me.prize)) * _PRIZE_WEIGHT
     hp_term = (_board_hp(me) - _board_hp(opp)) * _HP_WEIGHT
     return prize_term + hp_term
+
+
+# --------------------------------------------------------------------------- #
+# Damage-based evaluation function (SOT-1658, B-line R2).
+#
+# The real one-ply evaluator that replaces the provisional ``default_evaluate``.
+# It reuses two existing pieces rather than reinventing them:
+#
+#   * the **R4 positional value** ``rule_based.evaluate_position`` (SOT-1635):
+#     prizes dominate, then board HP, then Energy developed — a symmetric
+#     (me − opponent) score already tuned for this engine; and
+#   * the **damage calculation** ``agents.damage`` (SOT-1633): weakness ×2 /
+#     resistance −30, plus a KO test scaled by the prizes the KO would take.
+#
+# On top of the positional base it adds an *offensive* term — the net best-attack
+# damage our Active could deal to the opponent's Active minus theirs to ours —
+# so the search prefers moves that set up (or land) a hard-hitting / lethal swing,
+# not just moves that passively hold HP. Every lookup is guarded: an unknown card
+# id, a missing card table, a newly-appended enum, or a malformed observation all
+# degrade to the neutral (0) contribution instead of raising, so the outermost
+# random fallback in :class:`SearchAgent` is never needed just to evaluate.
+# --------------------------------------------------------------------------- #
+
+# Offensive-term weights. A point of net expected damage is worth a little more
+# than a point of static HP (an unrealised threat), and a reachable KO is worth a
+# flat bonus per prize it would take (a KO both removes an attacker and advances
+# the prize race that dominates :func:`~agents.rule_based.evaluate_position`).
+_DMG_WEIGHT = 2.0
+_KO_BONUS = 500.0
+
+
+def _offense(attacker, defender, cards, attacks) -> tuple[int, bool, int]:
+    """Best single-attack damage ``attacker``'s Active could deal to ``defender``.
+
+    Returns ``(best_damage, can_ko, prizes)`` where ``prizes`` is how many prize
+    cards Knocking the defender Out would award (1, or 2/3 for ex / Mega ex).
+    Any missing piece — no Active on either side, an unknown card id, a Pokémon
+    with no attacks — yields ``(0, False, 1)`` (a neutral, non-threatening
+    contribution) rather than raising.
+    """
+    if attacker is None or defender is None:
+        return 0, False, 1
+    attacker_cd = cards.get(attacker.id)
+    defender_cd = cards.get(defender.id)
+    if attacker_cd is None or not attacker_cd.attacks:
+        return 0, False, 1
+    best_dmg = 0
+    can_ko = False
+    for aid in attacker_cd.attacks:
+        atk = attacks.get(aid)
+        if atk is None:
+            continue
+        dmg = damage.attack_damage(atk, attacker_cd, defender_cd)
+        if dmg > best_dmg:
+            best_dmg = dmg
+        if damage.is_ko(atk, attacker_cd, defender_cd, defender.hp):
+            can_ko = True
+    prizes = 1
+    if defender_cd is not None:
+        if defender_cd.megaEx:
+            prizes = 3
+        elif defender_cd.ex:
+            prizes = 2
+    return best_dmg, can_ko, prizes
+
+
+def damage_based_evaluate(observation: Observation, your_index: int) -> float:
+    """Damage-based perspective score for a resulting position (higher = better).
+
+    A terminal win/loss is decisive. Otherwise the score is the R4 positional
+    value (:func:`~agents.rule_based.evaluate_position`: prizes, then board HP,
+    then Energy) plus an offensive damage differential computed with weakness
+    (×2) / resistance (−30): the best hit our Active threatens on the opponent's
+    Active minus the best hit theirs threatens on ours, with a bonus for a
+    reachable KO scaled by the prizes it would take. Guarded throughout — unknown
+    enums / missing fields fall back to the neutral contribution and never raise.
+    """
+    current = observation.current
+    if current is None:
+        return 0.0
+    result = current.result
+    if result in (0, 1):
+        return _WIN_SCORE if result == your_index else -_WIN_SCORE
+    if result == 2:  # draw
+        return 0.0
+
+    try:
+        players = current.players
+        me = players[your_index]
+        opp = players[1 - your_index]
+    except (IndexError, TypeError, AttributeError):
+        return 0.0
+
+    # Positional base: reuse the R4 scoring (prizes ≫ HP ≫ Energy), symmetric.
+    try:
+        base = evaluate_position(me, opp)
+    except Exception:
+        base = 0.0
+
+    # Offensive differential: net best-attack damage + KO potential, both sides.
+    # With no Active on either side there is nothing to attack, so skip the
+    # (engine-backed) card/attack table lookups entirely and stay positional.
+    offense = 0.0
+    try:
+        my_active = me.active[0] if me.active else None
+        opp_active = opp.active[0] if opp.active else None
+        if my_active is not None or opp_active is not None:
+            cards = damage.get_card_registry()
+            attacks = damage.get_attack_registry()
+            my_dmg, my_ko, my_prizes = _offense(my_active, opp_active, cards, attacks)
+            opp_dmg, opp_ko, opp_prizes = _offense(opp_active, my_active, cards, attacks)
+            offense = _DMG_WEIGHT * (my_dmg - opp_dmg)
+            if my_ko:
+                offense += _KO_BONUS * my_prizes
+            if opp_ko:
+                offense -= _KO_BONUS * opp_prizes
+    except Exception:
+        offense = 0.0
+
+    return base + offense
 
 
 # --------------------------------------------------------------------------- #
@@ -221,7 +343,8 @@ class SearchAgent(Agent):
             (or a legal random move if none was scored in time).
         max_candidates: Cap on how many candidate options are searched per
             decision (bounds cost on wide MAIN selections).
-        evaluate: Position evaluator (defaults to :func:`default_evaluate`).
+        evaluate: Position evaluator (defaults to :func:`damage_based_evaluate`,
+            the SOT-1658 damage-based function; pass a callable to override).
         manual_coin: Passed to ``search_begin`` (fix coin flips during lookahead).
     """
 
@@ -238,7 +361,7 @@ class SearchAgent(Agent):
         self.deck_path = deck_path
         self.time_budget_s = time_budget_s
         self.max_candidates = max_candidates
-        self.evaluate = evaluate or default_evaluate
+        self.evaluate = evaluate or damage_based_evaluate
         self.manual_coin = manual_coin
         self._deck_ids: Optional[list[int]] = None
 
