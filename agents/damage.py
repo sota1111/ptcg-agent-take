@@ -37,6 +37,9 @@ RESISTANCE_REDUCTION = 30
 # ``all_card_data()`` / ``all_attack()`` cross the ctypes boundary each call.
 _CARD_REGISTRY: Optional[dict[int, CardData]] = None
 _ATTACK_REGISTRY: Optional[dict[int, Attack]] = None
+# Set of card *names* that some other card evolves from — i.e. the pre-evolutions
+# that head an evolution line. Cached alongside the card registry.
+_EVOLUTION_SOURCES: Optional[set[str]] = None
 
 
 def get_card_registry() -> dict[int, CardData]:
@@ -53,6 +56,32 @@ def get_attack_registry() -> dict[int, Attack]:
     if _ATTACK_REGISTRY is None:
         _ATTACK_REGISTRY = {a.attackId: a for a in all_attack()}
     return _ATTACK_REGISTRY
+
+
+def get_evolution_source_names() -> set[str]:
+    """Return the set of card names that head an evolution line, built once.
+
+    A name is included iff some card in the registry lists it as its
+    :attr:`~cg.api.CardData.evolvesFrom`. A Basic Pokémon whose *name* is in this
+    set can therefore be evolved later — it is the base of an evolution line.
+    """
+    global _EVOLUTION_SOURCES
+    if _EVOLUTION_SOURCES is None:
+        _EVOLUTION_SOURCES = {
+            c.evolvesFrom for c in get_card_registry().values() if c.evolvesFrom
+        }
+    return _EVOLUTION_SOURCES
+
+
+def has_evolution_line(card: Optional[CardData]) -> bool:
+    """True iff ``card`` is a Basic Pokémon that some card can evolve from.
+
+    Used by the setup rules to prefer developing an evolution line over a lone
+    Basic. ``None`` / non-matching cards return ``False``.
+    """
+    if card is None or not card.name:
+        return False
+    return card.name in get_evolution_source_names()
 
 
 def attack_damage(
