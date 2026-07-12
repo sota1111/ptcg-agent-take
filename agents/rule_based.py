@@ -21,14 +21,115 @@ from __future__ import annotations
 import random
 from typing import Callable, Optional
 
-from cg.api import Observation, SelectContext, SelectData, SelectType
+from cg.api import (
+    AreaType,
+    CardType,
+    Observation,
+    OptionType,
+    SelectContext,
+    SelectData,
+    SelectType,
+)
 
+from agents import damage
 from agents.base import Agent, is_valid_selection, legal_random_sample, read_deck_csv
 
 # A context/type handler: given the agent, the current selection, and the full
 # observation, return the chosen option indices, or ``None`` to defer to the
 # fallback. Handlers must be pure w.r.t. engine state (read-only on ``obs``).
 Handler = Callable[["RuleBasedAgent", SelectData, Observation], Optional[list[int]]]
+
+
+def main_context_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """Fixed-priority policy for the :data:`SelectContext.MAIN` selection.
+
+    A MAIN selection offers the turn's actions (PLAY / ATTACH / EVOLVE / ATTACK /
+    END, single choice). We pick the highest-priority available action:
+
+    1. play a Basic Pokémon onto an open Bench spot,
+    2. evolve a Pokémon,
+    3. attach an Energy/Tool, the Active (main attacker) first,
+    4. an attack that Knocks Out the Defending Pokémon (max damage among those),
+    5. otherwise the highest expected-damage attack (if it deals any damage),
+    6. else end the turn.
+
+    Because attacking ends the turn, steps 1–3 run across successive MAIN calls
+    (playing, evolving, attaching one action at a time) and the attack fires only
+    once nothing better remains — i.e. set up first, then swing. Returns the
+    chosen option index list, or ``None`` to defer to the safe fallback when the
+    observation is too degenerate to reason about.
+    """
+    state = obs.current
+    if state is None:
+        return None
+    you = state.yourIndex
+    try:
+        me = state.players[you]
+        opp = state.players[1 - you]
+    except (IndexError, TypeError, AttributeError):
+        return None
+
+    cards = damage.get_card_registry()
+    attacks = damage.get_attack_registry()
+
+    my_active = me.active[0] if me.active else None
+    opp_active = opp.active[0] if opp.active else None
+    attacker_cd = cards.get(my_active.id) if my_active is not None else None
+    defender_cd = cards.get(opp_active.id) if opp_active is not None else None
+    defender_hp = opp_active.hp if opp_active is not None else None
+    hand = me.hand or []
+    bench_open = len(me.bench) < me.benchMax
+
+    play_basic: list[int] = []
+    evolve: list[int] = []
+    attach_active: list[int] = []
+    attach_other: list[int] = []
+    attacks_scored: list[tuple[int, int, bool]] = []  # (option index, damage, is_ko)
+    end_idx: Optional[int] = None
+
+    for i, o in enumerate(select.option):
+        t = o.type
+        if t == OptionType.END:
+            end_idx = i
+        elif t == OptionType.PLAY:
+            idx = o.index
+            if idx is not None and 0 <= idx < len(hand) and bench_open:
+                cd = cards.get(hand[idx].id)
+                if cd is not None and cd.cardType == CardType.POKEMON and cd.basic:
+                    play_basic.append(i)
+        elif t == OptionType.EVOLVE:
+            evolve.append(i)
+        elif t == OptionType.ATTACH:
+            if o.inPlayArea == AreaType.ACTIVE:
+                attach_active.append(i)
+            else:
+                attach_other.append(i)
+        elif t == OptionType.ATTACK and o.attackId is not None:
+            atk = attacks.get(o.attackId)
+            if atk is not None:
+                dmg = damage.attack_damage(atk, attacker_cd, defender_cd)
+                ko = damage.is_ko(atk, attacker_cd, defender_cd, defender_hp)
+                attacks_scored.append((i, dmg, ko))
+
+    if play_basic:  # 1. develop the board
+        return [play_basic[0]]
+    if evolve:  # 2. evolve
+        return [evolve[0]]
+    if attach_active:  # 3. power up the main attacker first
+        return [attach_active[0]]
+    if attach_other:
+        return [attach_other[0]]
+    ko_opts = [s for s in attacks_scored if s[2]]  # 4. lethal attack
+    if ko_opts:
+        return [max(ko_opts, key=lambda s: s[1])[0]]
+    dmg_opts = [s for s in attacks_scored if s[1] > 0]  # 5. best damaging attack
+    if dmg_opts:
+        return [max(dmg_opts, key=lambda s: s[1])[0]]
+    if end_idx is not None:  # 6. nothing productive left
+        return [end_idx]
+    return None
 
 
 class RuleBasedAgent(Agent):
@@ -39,9 +140,11 @@ class RuleBasedAgent(Agent):
         deck_path: Path to the deck CSV used for the initial selection.
     """
 
-    # SelectContext -> handler. Empty in R1: every context currently defers to
-    # the fallback. R2+ registers concrete pure functions here.
-    CONTEXT_HANDLERS: dict[SelectContext, Handler] = {}
+    # SelectContext -> handler. R2 (SOT-1633) registers the MAIN-turn policy;
+    # other contexts still defer to the safe fallback until later rules land.
+    CONTEXT_HANDLERS: dict[SelectContext, Handler] = {
+        SelectContext.MAIN: main_context_handler,
+    }
 
     # SelectType -> handler. Consulted only when no CONTEXT_HANDLERS entry
     # applies, so a rule can cover a whole selection type at once. Also empty
