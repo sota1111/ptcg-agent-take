@@ -20,6 +20,8 @@ eval/arena.py        # N-match arena: side-swap pairs, parallel        (tracked)
 eval/regression.py   # new-vs-old / vs-random regression suite         (tracked)
 eval/old_agent.py    # load an old agent version from a git ref        (tracked)
 eval/counterfactual.py # "what if?" replay of a recorded position     (tracked)
+agents/learned/features.py     # observation → fixed-length vectors    (tracked)
+agents/learned/generate_data.py # self-play → decision-level JSONL data (tracked)
 scripts/             # setup + build helpers                          (tracked)
 cg/                  # cabt engine bindings (gitignored, license)
 data/                # card CSVs (gitignored, license)
@@ -123,6 +125,25 @@ policy defaults to a seeded random baseline (swap in a real agent via the librar
 the engine's seedless internal shuffles (C2), after which the search state may become
 inconsistent — the tool records that as a per-branch error and still releases the
 session; use bounded depth and/or a stronger predictor for clean comparisons.
+
+## Self-play learning data (SOT-1642)
+Generate a **decision-level dataset** for the learning-based agent: play N self-play
+matches back-to-back and write one JSONL sample per decision (raw observation +
+legal-move candidates + the chosen move + a win/loss label from the match result).
+Built on `eval/record_match.py` (FULL_OBS traces), so it inherits the guaranteed
+engine cleanup and winner-scoring. Every sample is directly consumable by the
+`agents/learned/features.py` featuriser (`generate_data.featurize_sample`).
+```bash
+venv/bin/python agents/learned/generate_data.py --n 10 --seed 42 \
+    --agent0 random --agent1 random --out agents/learned/data/selfplay.jsonl
+venv/bin/python agents/learned/test_generate_data.py   # standalone tests
+```
+The match-up is configurable (`--agent0/--agent1` ∈ `random`, `rule_based`; default
+`random` vs `random`), so the rule-based agent drops in without code changes. Output
+lands in `agents/learned/data/` (gitignored). The engine takes **no seed** (E1), so
+match *trajectories* are not reproducible; `--seed` fixes the *agent-side* RNG and is
+recorded on every sample for provenance. All decisions of one match share the same
+match-level `result`/`winner`; each decision also carries a per-actor `win` label.
 
 ## Build a submission
 ```bash

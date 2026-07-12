@@ -15,3 +15,6 @@ __pycache__/
 
 # recorded match traces (derived from license-restricted engine/card data)
 /eval/traces/
+
+# generated self-play learning data (SOT-1642; derived from the engine)
+/agents/learned/data/
