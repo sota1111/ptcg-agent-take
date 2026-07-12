@@ -394,12 +394,310 @@ def heal_handler(
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
 
 
+# --------------------------------------------------------------------------- #
+# Scoring MAIN policy (SOT-1635, R4).
+#
+# The R2 policy (:func:`main_context_handler`) walks a *fixed priority ladder*.
+# R4 replaces the ladder with **option scoring**: every legal MAIN option is
+# given a numeric score and the highest wins. This is behaviour-compatible with
+# the ladder on the actions it already handled (set up, then swing, KO first)
+# because the score bands are ordered the same way — but it also lets *new*
+# tactical options slot in at a principled rank:
+#
+#   * **サポーター/グッズ使用** — the fixed policy never played a Supporter/Item
+#     (it only played Basic Pokémon and attached Energy), leaving card-advantage
+#     Supporters unused; scoring plays them.
+#   * **リトリート判断** — retreat only when it pays: escape a disabling Special
+#     Condition, or duck a lethal hit onto a viable Bench attacker; never idly.
+#   * **ベンチ育成 / エネルギー効率** — once the Active can already fire its best
+#     attack, extra Energy goes to a second Bench attacker instead of overloading
+#     the Active.
+#
+# Every scorer is a pure function of the observation, so the same per-option
+# score — and the position value in :func:`evaluate_position` — can be reused as
+# the evaluation function of the R6 (SOT-1638) one-ply search.
+# --------------------------------------------------------------------------- #
+
+# Score bands, high = preferred. They are spaced so an intra-band tie-break
+# (damage, HP, energy deficit) never bleeds across a band boundary. Ordering:
+# take a winning KO > develop/support the board > justified retreat > swing >
+# end; wasteful actions (voluntary discard, idle retreat, optional ability) sit
+# below END so they are only ever chosen when literally nothing else is offered.
+S_LETHAL = 10_000.0    # + damage + prize value: an attack that Knocks Out — win tempo
+S_SUPPORTER = 3_000.0  # play a Supporter (draw / search): card advantage, once per turn
+S_EVOLVE = 2_800.0     # evolve: more HP and stronger attacks
+S_PLAY_BASIC = 2_600.0 # + evolution-line / HP tie-break: develop the Bench
+S_ATTACH_LOAD = 2_400.0  # attach Energy to a Pokémon still short of its best attack
+S_RETREAT_OK = 2_200.0   # a *justified* retreat (condition escape / dodge a KO)
+S_ITEM = 2_000.0         # play an Item / Tool / Stadium: generically useful
+S_ATTACH_BENCH = 1_600.0 # ベンチ育成: load a second Bench attacker
+S_ATTACH_OVER = 900.0    # drop Energy on an already-loaded Pokémon (still > a swing)
+S_ATTACK_BASE = 500.0    # + damage: a non-lethal attack ends the turn, so swing last
+S_END = 0.0              # end the turn
+S_ABILITY = -0.4         # skip optional abilities (prefer END; avoids no-op loops)
+S_RETREAT_NO = -0.5      # an *unjustified* retreat: never chosen over ending the turn
+S_DISCARD = -0.6         # never voluntarily discard a card from play
+
+
+def _energy_count(poke) -> int:
+    """Number of Energy units attached to ``poke`` (0 for ``None``)."""
+    if poke is None:
+        return 0
+    return len(poke.energies) if poke.energies else 0
+
+
+def _best_attack(card) -> Optional[object]:
+    """The highest-damage attack of ``card`` (``None`` if it has no attacks)."""
+    if card is None or not card.attacks:
+        return None
+    reg = damage.get_attack_registry()
+    best = None
+    for aid in card.attacks:
+        atk = reg.get(aid)
+        if atk is None:
+            continue
+        if best is None or atk.damage > best.damage:
+            best = atk
+    return best
+
+
+def _energy_deficit(poke, card) -> int:
+    """Energy still needed before ``poke`` can use ``card``'s best attack.
+
+    Counts units only (the engine enforces exact colour when it offers the
+    ATTACK option); ``0`` means the Pokémon can already fire its best attack, so
+    further Energy is better spent developing the Bench.
+    """
+    atk = _best_attack(card)
+    if atk is None:
+        return 0
+    return max(0, len(atk.energies or []) - _energy_count(poke))
+
+
+def _is_viable_attacker(card) -> bool:
+    """True iff ``card`` is a Pokémon with at least one damaging attack."""
+    atk = _best_attack(card)
+    return atk is not None and atk.damage > 0
+
+
+def _inplay_pokemon(option, obs: Observation):
+    """Resolve the in-play Pokémon an ATTACH / EVOLVE option targets.
+
+    ATTACH/EVOLVE options point at their target via ``inPlayArea`` /
+    ``inPlayIndex`` (the ``area`` / ``index`` fields address the *hand* card being
+    attached). Returns the live :class:`~cg.api.Pokemon`, or ``None`` on any
+    malformed / out-of-range reference so the caller can fall back safely.
+    """
+    ps = _player_state(obs, option.playerIndex)
+    if ps is None or option.inPlayIndex is None:
+        return None
+    try:
+        if option.inPlayArea == AreaType.ACTIVE:
+            return ps.active[option.inPlayIndex]
+        if option.inPlayArea == AreaType.BENCH:
+            return ps.bench[option.inPlayIndex]
+    except (IndexError, TypeError, AttributeError):
+        return None
+    return None
+
+
+def _incoming_damage(opp_active, opp_card, my_active_card) -> int:
+    """Largest damage the opponent's Active could deal to our Active next turn."""
+    if opp_active is None or opp_card is None or not opp_card.attacks:
+        return 0
+    reg = damage.get_attack_registry()
+    worst = 0
+    for aid in opp_card.attacks:
+        atk = reg.get(aid)
+        if atk is None:
+            continue
+        worst = max(worst, damage.attack_damage(atk, opp_card, my_active_card))
+    return worst
+
+
+def _should_retreat(me, opp, cards) -> bool:
+    """Decide whether retreating the Active this turn actually pays.
+
+    Retreat costs Energy (discarded to pay the retreat cost) and switching clears
+    Special Conditions, so it is worth it only when the Active is a liability:
+
+    * it is Confused / Asleep / Paralyzed (can't reliably attack), or
+    * the opponent's Active would Knock it Out next turn,
+
+    **and** there is a Bench Pokémon worth promoting (a viable attacker, or one
+    with more HP than the endangered Active). With no Bench, retreat is impossible
+    and pointless, so we never score it up.
+    """
+    active = me.active[0] if me.active else None
+    if active is None or not me.bench:
+        return False
+    active_card = cards.get(active.id)
+
+    disabled = me.confused or me.asleep or me.paralyzed
+    opp_active = opp.active[0] if opp.active else None
+    opp_card = cards.get(opp_active.id) if opp_active is not None else None
+    incoming = _incoming_damage(opp_active, opp_card, active_card)
+    dying = active.hp is not None and incoming >= active.hp
+    if not (disabled or dying):
+        return False
+
+    active_hp = active.hp if active.hp is not None else 0
+    for p in me.bench:
+        if _is_viable_attacker(cards.get(p.id)):
+            return True
+        if (p.hp or 0) > active_hp:
+            return True
+    return False
+
+
+def _score_main_option(
+    o, obs: Observation, *, cards, me, opp, state, hand, bench_open,
+    attacker_cd, defender_cd, defender_hp,
+) -> Optional[float]:
+    """Score a single MAIN option (higher = better), or ``None`` to ignore it.
+
+    ``None`` is returned for options this policy has no opinion on (e.g. a
+    newly-appended, unknown :class:`~cg.api.OptionType`); if *every* option scores
+    ``None`` the handler defers to the safe fallback rather than guess.
+    """
+    t = o.type
+    if t == OptionType.END:
+        return S_END
+    if t == OptionType.ATTACK:
+        if o.attackId is None:
+            return S_ATTACK_BASE
+        atk = damage.get_attack_registry().get(o.attackId)
+        if atk is None:
+            return S_ATTACK_BASE
+        dmg = damage.attack_damage(atk, attacker_cd, defender_cd)
+        if damage.is_ko(atk, attacker_cd, defender_cd, defender_hp):
+            prize = 1
+            if defender_cd is not None:
+                if defender_cd.megaEx:
+                    prize = 3
+                elif defender_cd.ex:
+                    prize = 2
+            return S_LETHAL + dmg + 100.0 * prize
+        return S_ATTACK_BASE + dmg
+    if t == OptionType.PLAY:
+        idx = o.index
+        if idx is None or not (0 <= idx < len(hand)):
+            return None
+        cd = cards.get(hand[idx].id)
+        if cd is None:
+            return S_ITEM
+        if cd.cardType == CardType.POKEMON:
+            if not (cd.basic and bench_open):
+                return None
+            line = 1.0 if damage.has_evolution_line(cd) else 0.0
+            return S_PLAY_BASIC + 10.0 * line + (cd.hp or 0) / 100.0
+        if cd.cardType == CardType.SUPPORTER:
+            return S_ITEM if state.supporterPlayed else S_SUPPORTER
+        return S_ITEM
+    if t == OptionType.EVOLVE:
+        return S_EVOLVE
+    if t == OptionType.ATTACH:
+        target = _inplay_pokemon(o, obs)
+        card = cards.get(target.id) if target is not None else None
+        if target is None:
+            return S_ATTACH_OVER
+        if _energy_deficit(target, card) <= 0:
+            return S_ATTACH_OVER  # already able to fire its best attack
+        if o.inPlayArea == AreaType.ACTIVE:
+            return S_ATTACH_LOAD
+        return S_ATTACH_BENCH if _is_viable_attacker(card) else S_ATTACH_OVER
+    if t == OptionType.RETREAT:
+        return S_RETREAT_OK if _should_retreat(me, opp, cards) else S_RETREAT_NO
+    if t == OptionType.ABILITY:
+        return S_ABILITY
+    if t == OptionType.DISCARD:
+        return S_DISCARD
+    return None
+
+
+def scoring_main_context_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """MAIN policy (SOT-1635): score every legal option, pick the highest.
+
+    Behaviourally a superset of :func:`main_context_handler` — it sets up before
+    swinging and takes a Knock Out first — but it additionally plays Supporters /
+    Items, retreats when it pays, and spreads Energy onto a second Bench attacker.
+    Returns the single chosen option index, or ``None`` (defer) when the position
+    is too degenerate to reason about or no option is scoreable.
+    """
+    state = obs.current
+    if state is None:
+        return None
+    you = state.yourIndex
+    try:
+        me = state.players[you]
+        opp = state.players[1 - you]
+    except (IndexError, TypeError, AttributeError):
+        return None
+
+    cards = damage.get_card_registry()
+    my_active = me.active[0] if me.active else None
+    opp_active = opp.active[0] if opp.active else None
+    attacker_cd = cards.get(my_active.id) if my_active is not None else None
+    defender_cd = cards.get(opp_active.id) if opp_active is not None else None
+    defender_hp = opp_active.hp if opp_active is not None else None
+    hand = me.hand or []
+    bench_open = len(me.bench) < me.benchMax
+
+    best_i: Optional[int] = None
+    best_s: Optional[float] = None
+    for i, o in enumerate(select.option):
+        s = _score_main_option(
+            o, obs, cards=cards, me=me, opp=opp, state=state, hand=hand,
+            bench_open=bench_open, attacker_cd=attacker_cd,
+            defender_cd=defender_cd, defender_hp=defender_hp,
+        )
+        if s is None:
+            continue
+        if best_s is None or s > best_s:  # strict '>' keeps the first (lowest) index on ties
+            best_s = s
+            best_i = i
+    if best_i is None:
+        return None
+    return [best_i]
+
+
+def evaluate_position(me, opp) -> float:
+    """Static board value for ``me`` (positive = ``me`` is ahead).
+
+    The reusable evaluation for the R6 (SOT-1638) one-ply search: prizes dominate
+    (fewer of *your* prize cards left = closer to winning), then total board HP,
+    then Energy developed on board. It reads only the observation's player states,
+    so it can score any candidate position the search reaches.
+    """
+    def board(ps):
+        pokes = [p for p in (list(ps.active) + list(ps.bench)) if p is not None]
+        hp = sum(p.hp for p in pokes if p.hp is not None)
+        energy = sum(_energy_count(p) for p in pokes)
+        return hp, energy
+
+    my_prizes_left = len(me.prize)
+    opp_prizes_left = len(opp.prize)
+    my_hp, my_energy = board(me)
+    opp_hp, opp_energy = board(opp)
+    return (
+        1_000.0 * (opp_prizes_left - my_prizes_left)
+        + 1.0 * (my_hp - opp_hp)
+        + 10.0 * (my_energy - opp_energy)
+    )
+
+
 class RuleBasedAgent(Agent):
     """Dispatches each selection to a per-context rule, guarded by a safe fallback.
 
     Args:
         seed: Seed for the fallback RNG (reproducible random tie-breaks / fills).
         deck_path: Path to the deck CSV used for the initial selection.
+        policy: MAIN-turn policy — ``"scoring"`` (default, SOT-1635 option
+            scoring) or ``"fixed"`` (the SOT-1633 fixed-priority ladder). Only the
+            MAIN context differs; all other context handlers are shared. Exposed so
+            the new policy can be A/B compared against the old one.
     """
 
     # SelectContext -> handler. R2 (SOT-1633) registers the MAIN-turn policy;
@@ -410,8 +708,9 @@ class RuleBasedAgent(Agent):
         # Setup: place the best Basic (evolution line, then HP).
         SelectContext.SETUP_ACTIVE_POKEMON: place_basic_handler,
         SelectContext.SETUP_BENCH_POKEMON: place_basic_handler,
-        # After a KO: promote the readiest Bench Pokémon (Energy, then HP).
+        # After a KO / on retreat: promote the readiest Bench Pokémon (Energy, HP).
         SelectContext.TO_ACTIVE: to_active_handler,
+        SelectContext.SWITCH: to_active_handler,
         # Forced YesNo prompts: fixed reasonable defaults.
         SelectContext.IS_FIRST: yesno_default_handler,
         SelectContext.COIN_HEAD: yesno_default_handler,
@@ -438,9 +737,31 @@ class RuleBasedAgent(Agent):
     # in R1.
     TYPE_HANDLERS: dict[SelectType, Handler] = {}
 
-    def __init__(self, seed: Optional[int] = None, deck_path: str = "deck.csv") -> None:
+    # MAIN-turn policy handlers, selected by the ``policy`` argument. The scoring
+    # policy (SOT-1635) is the default; the fixed-priority ladder (SOT-1633) is
+    # kept for A/B comparison.
+    MAIN_POLICIES: dict[str, Handler] = {
+        "scoring": scoring_main_context_handler,
+        "fixed": main_context_handler,
+    }
+
+    def __init__(
+        self,
+        seed: Optional[int] = None,
+        deck_path: str = "deck.csv",
+        policy: str = "scoring",
+    ) -> None:
         self.rng = random.Random(seed)
         self.deck_path = deck_path
+        if policy not in self.MAIN_POLICIES:
+            raise ValueError(
+                f"unknown policy {policy!r}; expected one of {sorted(self.MAIN_POLICIES)}"
+            )
+        self.policy = policy
+        # Per-instance MAIN handler so the policy can vary without mutating the
+        # shared class table; every other context still reads ``CONTEXT_HANDLERS``
+        # live, so later registrations there keep taking effect.
+        self._main_handler: Handler = self.MAIN_POLICIES[policy]
 
     def decide(self, obs: Observation) -> list[int]:
         """Return a selection, never raising and never emitting an illegal move.
@@ -471,7 +792,10 @@ class RuleBasedAgent(Agent):
         caller then falls back). ``.get`` on the dispatch tables makes an unknown
         or newly-appended enum value simply miss and defer, with no crash.
         """
-        handler = self.CONTEXT_HANDLERS.get(select.context)
+        if select.context == SelectContext.MAIN:
+            handler = self._main_handler
+        else:
+            handler = self.CONTEXT_HANDLERS.get(select.context)
         if handler is None:
             handler = self.TYPE_HANDLERS.get(select.type)
         if handler is None:
