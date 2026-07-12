@@ -1,0 +1,3 @@
+# Local eval only. The cabt engine (cg/) uses ctypes + a bundled shared lib — no pip deps.
+# kaggle-environments is used by the official harness; pin per competition docs if needed.
+# kaggle-environments==1.30.1
