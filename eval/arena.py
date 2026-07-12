@@ -122,6 +122,15 @@ def build_agent(spec: dict):
             lambda obs_dict: rb.decide(to_observation_class(obs_dict)),
             name=name, version=spec["pkg"], params={"seed": spec.get("seed"), "policy": policy, "ref_pkg": spec["pkg"]},
         )
+    if kind == "learned":
+        # Learned-policy agent (SOT-1644): scores legal moves with a trained
+        # model, falling back to a random legal move on any failure / missing
+        # model. ``model_path`` is picklable (a plain path string).
+        from agents.learned.agent import make_learned_agent
+
+        return make_learned_agent(
+            model_path=spec.get("model_path"), seed=spec.get("seed"), name=name,
+        )
     if kind == "raising":
         return make_raising_agent(after=spec.get("after", 0), name=name)
     raise ValueError(f"unknown agent kind: {kind!r}")
@@ -133,8 +142,16 @@ def agent_spec(
     seed: Optional[int] = None,
     after: int = 0,
     policy: Optional[str] = None,
+    model_path: Optional[str] = None,
 ) -> dict:
-    return {"kind": kind, "name": name or kind, "seed": seed, "after": after, "policy": policy}
+    return {
+        "kind": kind,
+        "name": name or kind,
+        "seed": seed,
+        "after": after,
+        "policy": policy,
+        "model_path": model_path,
+    }
 
 
 # --------------------------------------------------------------------------- #
