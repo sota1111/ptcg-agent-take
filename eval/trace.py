@@ -47,6 +47,8 @@ FAIL_START_ERROR = "start_error"        # BattleStart reported errorPlayer/error
 FAIL_AGENT_EXCEPTION = "agent_exception"  # the agent callable raised
 FAIL_ENGINE_ERROR = "engine_error"      # game.battle_select raised (bad selection etc.)
 FAIL_TRUNCATED = "truncated"            # hit max_steps without a RESULT (result == -1)
+FAIL_TIMEOUT = "timeout"                # match exceeded its wall-clock budget (arena, SOT-1619)
+FAIL_WORKER_ERROR = "worker_error"      # the arena worker itself raised (SOT-1619)
 
 
 def engine_hash(lib_path: Optional[str] = None) -> dict:
