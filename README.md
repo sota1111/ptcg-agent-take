@@ -22,6 +22,9 @@ eval/old_agent.py    # load an old agent version from a git ref        (tracked)
 eval/counterfactual.py # "what if?" replay of a recorded position     (tracked)
 agents/learned/features.py     # observation → fixed-length vectors    (tracked)
 agents/learned/generate_data.py # self-play → decision-level JSONL data (tracked)
+agents/learned/train.py        # winner-move imitation → policy model  (tracked)
+agents/learned/agent.py        # learned-policy inference agent        (tracked)
+agents/learned/model/policy.json # trained inference model (bundleable) (tracked)
 scripts/             # setup + build helpers                          (tracked)
 cg/                  # cabt engine bindings (gitignored, license)
 data/                # card CSVs (gitignored, license)
@@ -144,6 +147,35 @@ lands in `agents/learned/data/` (gitignored). The engine takes **no seed** (E1),
 match *trajectories* are not reproducible; `--seed` fixes the *agent-side* RNG and is
 recorded on every sample for provenance. All decisions of one match share the same
 match-level `result`/`winner`; each decision also carries a per-actor `win` label.
+
+## Policy-model training (SOT-1643)
+Train the learned agent's linear option-scorer by **imitation of the winner's moves**
+(behavioral cloning): each decision made by the winning player becomes a training
+instance whose legal options are labelled `1` for the winner's chosen option and `0`
+otherwise, and a class-balanced logistic regression (pure Python, **no learning
+dependencies added**) learns to score the chosen option above the rest — exactly how
+`agents/learned/agent.py` picks its move.
+```bash
+venv/bin/python agents/learned/train.py               # gen data (if absent) → train → save model
+venv/bin/python agents/learned/test_train.py          # standalone tests
+```
+The dataset defaults to **rule-based self-play** (`--agent0/--agent1 rule_based`): in
+`random`-vs-`random` play the winner's move is itself uniform, so imitation has no
+signal and cannot beat the baseline; cloning a strong policy's winners does. The model
+is written to `agents/learned/model/policy.json` in the inference-only JSON format
+(`ptcg-learned-policy` / `kind: linear`, readable with the standard library alone — no
+numpy / scikit-learn), a few KB, so it bundles with a submission and drops straight into
+`LearnedAgent(model_path=...)`. Regenerate an equivalent model with:
+```bash
+venv/bin/python agents/learned/train.py --regenerate --n 120 --gen-seed 42
+```
+(The engine takes **no seed** (E1), so a regenerated model is not byte-identical to the
+committed one, but reliably clears the baseline.)
+Training reports the **held-out top-`k` choice-agreement** vs the **random baseline**
+(mean `k / n`); it beats the baseline on rule-based data (~0.69 vs ~0.25 at N=120) and
+exits non-zero if it fails to, so a gate can catch a lost learning signal. The `mean`/`std`
+standardisation is fit on the training split only (no holdout leakage) and stored in the
+model so inference standardises identically.
 
 ## Build a submission
 ```bash
