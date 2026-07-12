@@ -97,18 +97,25 @@ def build_agent(spec: dict):
         from cg.api import to_observation_class
         from eval.record_match import Agent
 
-        rb = RuleBasedAgent(seed=spec.get("seed"))
+        policy = spec.get("policy") or "scoring"
+        rb = RuleBasedAgent(seed=spec.get("seed"), policy=policy)
         return Agent(
             lambda obs_dict: rb.decide(to_observation_class(obs_dict)),
-            name=name, version="1", params={"seed": spec.get("seed")},
+            name=name, version="1", params={"seed": spec.get("seed"), "policy": policy},
         )
     if kind == "raising":
         return make_raising_agent(after=spec.get("after", 0), name=name)
     raise ValueError(f"unknown agent kind: {kind!r}")
 
 
-def agent_spec(kind: str, name: Optional[str] = None, seed: Optional[int] = None, after: int = 0) -> dict:
-    return {"kind": kind, "name": name or kind, "seed": seed, "after": after}
+def agent_spec(
+    kind: str,
+    name: Optional[str] = None,
+    seed: Optional[int] = None,
+    after: int = 0,
+    policy: Optional[str] = None,
+) -> dict:
+    return {"kind": kind, "name": name or kind, "seed": seed, "after": after, "policy": policy}
 
 
 # --------------------------------------------------------------------------- #
@@ -423,6 +430,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--deck1", default=None, help="agent B's deck CSV (default: same as --deck0)")
     p.add_argument("--agent-a", default="random", choices=["random", "rule_based", "raising"], help="agent A kind")
     p.add_argument("--agent-b", default="random", choices=["random", "rule_based", "raising"], help="agent B kind")
+    p.add_argument("--policy-a", default=None, choices=["scoring", "fixed"], help="MAIN policy for a rule_based agent A")
+    p.add_argument("--policy-b", default=None, choices=["scoring", "fixed"], help="MAIN policy for a rule_based agent B")
     p.add_argument("--workers", type=int, default=None, help="process pool size (default: min(games, cpu_count))")
     p.add_argument("--seed", type=int, default=None, help="base seed for agent RNG (deterministic per-match derivation)")
     p.add_argument("--level", choices=list(_LEVELS), default="result", help="trace verbosity per match")
@@ -447,8 +456,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         games=args.games,
         deck_a=deck_a,
         deck_b=deck_b,
-        agent_a=agent_spec(args.agent_a, name=f"{args.agent_a}A"),
-        agent_b=agent_spec(args.agent_b, name=f"{args.agent_b}B"),
+        agent_a=agent_spec(args.agent_a, name=f"{args.agent_a}A", policy=args.policy_a),
+        agent_b=agent_spec(args.agent_b, name=f"{args.agent_b}B", policy=args.policy_b),
         out_dir=out_dir,
         level=_LEVELS[args.level],
         max_steps=args.max_steps,
