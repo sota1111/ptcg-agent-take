@@ -11,10 +11,11 @@ entry point ``agent(obs_dict) -> list[int]``:
                       an outermost safety guard that always falls back to a legal
                       random selection. Rules (R2+) are added as pure per-context
                       functions without touching the guard.
-- ``search_agent``  — a search-line skeleton (案B): one-ply lookahead via the
+- ``search_agent``  — a search-line agent (案B): one-ply lookahead via the
                       official ``search_begin`` / ``search_step`` API with a
-                      provisional evaluation function and the same outermost
-                      random-fallback guard. Independent of ``rule_based``.
+                      damage-based evaluation (reusing ``damage`` and the R4
+                      ``rule_based.evaluate_position`` scoring) and the same
+                      outermost random-fallback guard.
 """
 
 from agents.base import Agent, legal_random_sample, read_deck_csv, is_valid_selection

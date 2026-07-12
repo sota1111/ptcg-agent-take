@@ -21,10 +21,15 @@ sys.path.insert(0, REPO)
 os.chdir(REPO)
 
 from cg.api import (  # noqa: E402
+    Attack,
+    CardData,
+    CardType,
+    EnergyType,
     Observation,
     Option,
     OptionType,
     PlayerState,
+    Pokemon,
     SelectContext,
     SelectData,
     SelectType,
@@ -32,8 +37,13 @@ from cg.api import (  # noqa: E402
     to_observation_class,
 )
 
+from agents import damage  # noqa: E402
 from agents.base import is_valid_selection  # noqa: E402
-from agents.search_agent import SearchAgent, default_evaluate  # noqa: E402
+from agents.search_agent import (  # noqa: E402
+    SearchAgent,
+    damage_based_evaluate,
+    default_evaluate,
+)
 
 
 def _make_select(n_options: int, min_count: int, max_count: int,
@@ -146,6 +156,133 @@ def test_default_evaluate_prefers_winning():
     print("PASS test_default_evaluate_prefers_winning")
 
 
+# --------------------------------------------------------------------------- #
+# Damage-based evaluation function (SOT-1658).
+# --------------------------------------------------------------------------- #
+
+def _pokemon(card_id: int, hp: int, max_hp: object = None) -> Pokemon:
+    return Pokemon(
+        id=card_id, serial=card_id * 1000, hp=hp,
+        maxHp=hp if max_hp is None else max_hp, appearThisTurn=False,
+        energies=[], energyCards=[], tools=[], preEvolution=[],
+    )
+
+
+def _player(active: object = None, *, prize_count: int = 6) -> PlayerState:
+    return PlayerState(
+        active=[active] if active is not None else [],
+        bench=[], benchMax=5, deckCount=40, discard=[],
+        prize=[None] * prize_count, handCount=0, hand=None,
+        poisoned=False, burned=False, asleep=False, paralyzed=False, confused=False,
+    )
+
+
+def _nonterminal_obs(me: PlayerState, opp: PlayerState) -> Observation:
+    # result == -1: battle not finished, so the positional/damage terms apply.
+    state = State(
+        turn=5, turnActionCount=0, yourIndex=0, firstPlayer=0,
+        supporterPlayed=False, stadiumPlayed=False, energyAttached=False,
+        retreated=False, result=-1, stadium=[], looking=None,
+        players=[me, opp],
+    )
+    return Observation(select=None, logs=[], current=state)
+
+
+def _mk_card(card_id: int, *, energy_type=EnergyType.FIRE, weakness=None,
+             resistance=None, hp: int = 100, attacks=(), ex: bool = False,
+             mega_ex: bool = False) -> CardData:
+    return CardData(
+        cardId=card_id, name=f"c{card_id}", cardType=CardType.POKEMON,
+        retreatCost=1, hp=hp, weakness=weakness, resistance=resistance,
+        energyType=energy_type, basic=True, stage1=False, stage2=False,
+        ex=ex, megaEx=mega_ex, tera=False, aceSpec=False, evolvesFrom=None,
+        skills=[], attacks=list(attacks),
+    )
+
+
+class _StubbedRegistries:
+    """Temporarily replace the engine-backed card/attack tables with stubs.
+
+    Lets the damage-based evaluator be tested with hand-built cards / attacks —
+    weakness ×2 and resistance −30 reflected in the offense term — without
+    touching the ctypes engine. Restores the caches on exit.
+    """
+
+    def __init__(self, cards: dict, attacks: dict) -> None:
+        self.cards = cards
+        self.attacks = attacks
+
+    def __enter__(self):
+        self._saved = (damage._CARD_REGISTRY, damage._ATTACK_REGISTRY)
+        damage._CARD_REGISTRY = self.cards
+        damage._ATTACK_REGISTRY = self.attacks
+        return self
+
+    def __exit__(self, *exc):
+        damage._CARD_REGISTRY, damage._ATTACK_REGISTRY = self._saved
+        return False
+
+
+def test_damage_based_prefers_winning():
+    # A terminal win/loss stays decisive under the damage-based evaluator too.
+    won = _terminal_obs(result=0)
+    assert damage_based_evaluate(won, your_index=0) > 0
+    assert damage_based_evaluate(won, your_index=1) < 0
+    print("PASS test_damage_based_prefers_winning")
+
+
+def test_damage_based_reflects_prize_difference():
+    # Fewer of our own prize cards remaining (we've taken more) = higher score.
+    ahead = damage_based_evaluate(
+        _nonterminal_obs(_player(prize_count=2), _player(prize_count=6)), 0)
+    behind = damage_based_evaluate(
+        _nonterminal_obs(_player(prize_count=6), _player(prize_count=2)), 0)
+    assert ahead > behind, (ahead, behind)
+    print("PASS test_damage_based_reflects_prize_difference")
+
+
+def test_damage_based_reflects_weakness_and_resistance():
+    # Same board, same attack — only the defender's weakness/resistance differs.
+    # A weak defender raises our offense term; a resistant one lowers it.
+    attacker = _mk_card(1, energy_type=EnergyType.FIRE, attacks=[10])
+    neutral_def = _mk_card(2, energy_type=EnergyType.WATER, hp=100)
+    weak_def = _mk_card(3, energy_type=EnergyType.WATER, hp=100,
+                        weakness=EnergyType.FIRE)
+    resist_def = _mk_card(4, energy_type=EnergyType.WATER, hp=100,
+                          resistance=EnergyType.FIRE)
+    attacks = {10: Attack(attackId=10, name="hit", text="", damage=50,
+                          energies=[EnergyType.FIRE])}
+    cards = {c.cardId: c for c in (attacker, neutral_def, weak_def, resist_def)}
+
+    with _StubbedRegistries(cards, attacks):
+        def score(defender_id: int) -> float:
+            me = _player(_pokemon(1, hp=100), prize_count=6)
+            opp = _player(_pokemon(defender_id, hp=100), prize_count=6)
+            return damage_based_evaluate(_nonterminal_obs(me, opp), 0)
+
+        base = score(2)      # no weakness/resistance: 50 damage
+        weak = score(3)      # weakness ×2: 100 damage (also a KO of the 100-HP def)
+        resist = score(4)    # resistance −30: 20 damage
+    assert weak > base > resist, (weak, base, resist)
+    print("PASS test_damage_based_reflects_weakness_and_resistance")
+
+
+def test_damage_based_unknown_card_no_crash():
+    # Actives whose card ids are absent from the registry (an unknown / newly
+    # added card) must fall back to a neutral offense term, never raise. Here the
+    # only difference between the two boards is the prize count, so the positional
+    # term still orders them.
+    with _StubbedRegistries({}, {}):
+        ahead = damage_based_evaluate(
+            _nonterminal_obs(_player(_pokemon(999999, hp=80), prize_count=3),
+                             _player(_pokemon(888888, hp=80), prize_count=6)), 0)
+        behind = damage_based_evaluate(
+            _nonterminal_obs(_player(_pokemon(999999, hp=80), prize_count=6),
+                             _player(_pokemon(888888, hp=80), prize_count=3)), 0)
+    assert ahead > behind, (ahead, behind)
+    print("PASS test_damage_based_unknown_card_no_crash")
+
+
 def test_search_agent_completes_vs_rulebased():
     """AC1: N full matches SearchAgent vs RuleBasedAgent, zero failures."""
     from agents.rule_based import RuleBasedAgent
@@ -212,6 +349,10 @@ if __name__ == "__main__":
     test_guard_on_raising_internal_step()
     test_abnormal_search_state_scores_none()
     test_default_evaluate_prefers_winning()
+    test_damage_based_prefers_winning()
+    test_damage_based_reflects_prize_difference()
+    test_damage_based_reflects_weakness_and_resistance()
+    test_damage_based_unknown_card_no_crash()
     test_search_agent_completes_vs_rulebased()
     test_raising_evaluator_still_completes()
     print("ALL TESTS PASSED")
