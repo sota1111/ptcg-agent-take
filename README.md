@@ -17,6 +17,8 @@ deck.csv             # our 60-card deck                                (tracked)
 eval/run_match.py    # local self-play match runner                   (tracked)
 eval/record_match.py # one match → JSONL trace (schema in trace.py)    (tracked)
 eval/arena.py        # N-match arena: side-swap pairs, parallel        (tracked)
+eval/regression.py   # new-vs-old / vs-random regression suite         (tracked)
+eval/old_agent.py    # load an old agent version from a git ref        (tracked)
 eval/counterfactual.py # "what if?" replay of a recorded position     (tracked)
 scripts/             # setup + build helpers                          (tracked)
 cg/                  # cabt engine bindings (gitignored, license)
@@ -59,6 +61,25 @@ venv/bin/python eval/test_report.py                          # standalone tests
 ```
 Per-decision thinking times require traces recorded at `--level logs` (RESULT-level
 traces carry no decision records).
+
+## Regression suite (new vs old / vs random)
+One command re-checks a rule change against **two matchup cards** so optimisation
+does not over-fit to Random: `rule_vs_random` (must keep beating Random — Wilson
+95% CI lower bound > 0.5) and `new_vs_old` (must not regress against the previous
+agent version — Wilson 95% CI upper bound ≥ 0.5). Each card is a side-swap arena
+recorded at LOGS level, so the run also prints the **per-decision thinking-time**
+distribution (the Kaggle time-limit watch). Built on `eval/arena.py` + `eval/report.py`.
+```bash
+venv/bin/python eval/regression.py --games 100 --seed 42            # both cards, gated
+venv/bin/python eval/regression.py --games 100 --think-warn-ms 900  # warn on slow decisions
+venv/bin/python eval/regression.py --old-ref v1.0.0                 # new vs a tagged old agent
+venv/bin/python eval/test_regression.py                            # standalone tests
+```
+Old-version reference for `new_vs_old` is established two ways: the in-repo policy
+toggle (default — `new`=scoring / `old`=fixed MAIN policy) which always runs, and
+`--old-ref <git-ref>` which materialises the historical `agents/` package from any
+git tag/commit via `eval/old_agent.py` and plays against it. Exit code is 0 iff
+every card's gate passes (`--no-gate` to report only).
 
 ## Game-record rendering / record-based replay
 Render one match trace as a **human-readable game record** to review "why did this

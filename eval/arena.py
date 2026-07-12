@@ -103,6 +103,25 @@ def build_agent(spec: dict):
             lambda obs_dict: rb.decide(to_observation_class(obs_dict)),
             name=name, version="1", params={"seed": spec.get("seed"), "policy": policy},
         )
+    if kind == "rule_based_ref":
+        # An *old version* of the rule-based agent, materialised from a git ref by
+        # eval.old_agent and imported under its own package name so it coexists with
+        # the current `agents` package in the same worker (new-vs-old regression).
+        from cg.api import to_observation_class
+        from eval.old_agent import load_rule_based_class
+        from eval.record_match import Agent
+
+        rb_cls = load_rule_based_class(spec["import_root"], spec["pkg"])
+        policy = spec.get("policy")
+        try:
+            rb = rb_cls(seed=spec.get("seed"), policy=policy) if policy else rb_cls(seed=spec.get("seed"))
+        except TypeError:
+            # Refs predating the `policy` kwarg (pre-SOT-1635) use their own default.
+            rb = rb_cls(seed=spec.get("seed"))
+        return Agent(
+            lambda obs_dict: rb.decide(to_observation_class(obs_dict)),
+            name=name, version=spec["pkg"], params={"seed": spec.get("seed"), "policy": policy, "ref_pkg": spec["pkg"]},
+        )
     if kind == "raising":
         return make_raising_agent(after=spec.get("after", 0), name=name)
     raise ValueError(f"unknown agent kind: {kind!r}")
