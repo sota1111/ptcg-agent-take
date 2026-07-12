@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# recorded match traces (derived from license-restricted engine/card data)
+/eval/traces/
