@@ -45,6 +45,20 @@ venv/bin/python eval/test_arena.py                           # standalone tests
 The engine takes no seed (E1), so match *outcomes* are not reproducible; only the
 *agent-side* RNG is (deterministic per-match seed derived from `--seed`).
 
+## Aggregation report
+Turn a directory of traces into a statistical summary: **win rate + Wilson 95% CI**
+per agent, **decision-reason distribution**, **first/second-player win rate**, a
+**deck × deck matchup table**, and turn / decision / per-decision thinking-time
+distributions. Draws, truncated matches and abnormal (failure) losses are tallied
+*separately* from normal decided games so they never skew the win rate.
+```bash
+venv/bin/python eval/report.py eval/traces/arena_<ts>        # text summary
+venv/bin/python eval/report.py <dir> --json report.json      # also dump JSON
+venv/bin/python eval/test_report.py                          # standalone tests
+```
+Per-decision thinking times require traces recorded at `--level logs` (RESULT-level
+traces carry no decision records).
+
 ## Build a submission
 ```bash
 bash scripts/build_submission.sh      # -> submission.tar.gz (main.py + deck.csv + cg/)
