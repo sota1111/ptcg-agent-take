@@ -2,7 +2,7 @@
 # Copy the license-restricted engine (cg/) and card data into this repo (both gitignored).
 # Override the source with: SRC=/path/to/pokemon-tcg-ai-battle/extracted bash scripts/setup_engine.sh
 set -e
-SRC="${SRC:-/workspaces/kaggle-ptcg-ume/data/simulation/extracted}"
+SRC="${SRC:-/workspaces/kaggle-ptcg-take/data/simulation/extracted}"
 SAMPLE="$SRC/sample_submission/sample_submission"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 [ -d "$SAMPLE/cg" ] || { echo "engine not found at $SAMPLE/cg — set SRC="; exit 1; }
