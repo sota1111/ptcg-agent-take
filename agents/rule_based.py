@@ -256,25 +256,88 @@ def place_basic_handler(
         cd = cards.get(cid) if cid is not None else None
         is_poke = 1 if (cd is not None and cd.cardType == CardType.POKEMON) else 0
         has_line = 1 if damage.has_evolution_line(cd) else 0
+        atk = _best_attack(cd)
+        best_dmg = atk.damage if atk is not None else 0
         hp = cd.hp if cd is not None else 0
-        scored.append((i, (is_poke, has_line, hp)))
+        scored.append((i, (is_poke, has_line, best_dmg, hp)))
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
+
+
+def place_basic_active_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """SETUP_ACTIVE_POKEMON: place the Basic that survives the opening race.
+
+    SOT-1682: matches here are short (median 5 turns) and decided by board
+    attrition, so the *Active* pick is HP-first — it faces the first attacks —
+    with attack damage and the evolution line as tie-breaks. The Bench pick
+    (:func:`place_basic_handler`) stays line-first: benched Pokémon get the time
+    to evolve.
+    """
+    cards = damage.get_card_registry()
+    scored: list[tuple[int, tuple]] = []
+    for i, o in enumerate(select.option):
+        cid = _referenced_card_id(o, obs)
+        cd = cards.get(cid) if cid is not None else None
+        is_poke = 1 if (cd is not None and cd.cardType == CardType.POKEMON) else 0
+        has_line = 1 if damage.has_evolution_line(cd) else 0
+        atk = _best_attack(cd)
+        best_dmg = atk.damage if atk is not None else 0
+        hp = cd.hp if cd is not None else 0
+        scored.append((i, (is_poke, hp, best_dmg, has_line)))
+    return _top_k(scored, _pick_count(select, want_at_least_one=True))
+
+
+def _opponent_active_card(obs: Observation):
+    """The opponent Active's :class:`~cg.api.CardData` (``None`` if unknown)."""
+    state = obs.current
+    if state is None:
+        return None
+    try:
+        opp = state.players[1 - state.yourIndex]
+        opp_active = opp.active[0] if opp.active else None
+    except (IndexError, TypeError, AttributeError):
+        return None
+    if opp_active is None:
+        return None
+    return damage.get_card_registry().get(opp_active.id)
+
+
+def _prize_value(card) -> int:
+    """Prize cards the opponent takes when this Pokémon is Knocked Out (1–3)."""
+    if card is None:
+        return 1
+    if card.megaEx:
+        return 3
+    if card.ex:
+        return 2
+    return 1
 
 
 def to_active_handler(
     agent: "RuleBasedAgent", select: SelectData, obs: Observation
 ) -> Optional[list[int]]:
-    """TO_ACTIVE (after a Knock Out): promote the readiest Bench Pokémon.
+    """TO_ACTIVE (after a Knock Out) / SWITCH: promote the best Bench Pokémon.
 
-    Prefer the Pokémon carrying the most Energy (closest to attacking), then the
-    highest current HP so the new Active survives longer.
+    Prefer a Pokémon that can fire a damaging attack *right now* (SOT-1682), then
+    the one closest to firing (smallest Energy deficit), then the one hitting the
+    current defender hardest (weakness/resistance-aware), then the cheaper prize
+    gift (don't promote an ex/megaEx as fodder), then higher HP.
     """
+    cards = damage.get_card_registry()
+    defender_cd = _opponent_active_card(obs)
     scored: list[tuple[int, tuple]] = []
     for i, o in enumerate(select.option):
         p = _referenced_pokemon(o, obs)
-        n_energy = len(p.energies) if (p is not None and p.energies) else 0
+        pc = cards.get(p.id) if p is not None else None
+        if p is not None and _is_viable_attacker(pc):
+            deficit = _energy_deficit(p, pc)
+        else:
+            deficit = 99  # never going to attack: last resort
+        can_fire = 1 if deficit <= 0 else 0
+        dmg = _best_damage_vs(pc, defender_cd)
         hp = p.hp if p is not None else 0
-        scored.append((i, (n_energy, hp)))
+        scored.append((i, (can_fire, -deficit, dmg, -_prize_value(pc), hp)))
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
 
 
@@ -363,19 +426,161 @@ def damage_target_handler(
 ) -> Optional[list[int]]:
     """DAMAGE_COUNTER / DAMAGE_COUNTER_ANY / DAMAGE: aim to finish a Knock Out.
 
-    Concentrate damage on the target with the lowest current HP — the Pokémon
-    closest to being Knocked Out — so placements complete a KO rather than being
-    spread thin.
+    Prefer an *opponent* target, then one the remaining counters can actually
+    Knock Out (``select.remainDamageCounter``, 10 damage each), then the lowest
+    current HP — so placements complete a KO rather than being spread thin.
     """
+    state = obs.current
+    you = state.yourIndex if state is not None else None
+    remain = select.remainDamageCounter or 0
     scored: list[tuple[int, tuple]] = []
     for i, o in enumerate(select.option):
         p = _referenced_pokemon(o, obs)
+        is_opp = 1 if (you is not None and o.playerIndex is not None and o.playerIndex != you) else 0
         if p is None or p.hp is None:
-            hp_key = -(10 ** 9)  # unknown target: least preferred
+            scored.append((i, (is_opp, 0, -(10 ** 9))))  # unknown target: least preferred
         else:
-            hp_key = -p.hp        # lower HP -> larger key -> picked first
-        scored.append((i, (hp_key,)))
+            ko = 1 if (remain > 0 and p.hp <= remain * 10) else 0
+            scored.append((i, (is_opp, ko, -p.hp)))  # lower HP -> larger key -> first
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
+
+
+def _option_card_id(option, select: SelectData, obs: Observation) -> Optional[int]:
+    """Like :func:`_referenced_card_id` but also resolves DECK / LOOKING refs.
+
+    A DECK option indexes into ``select.deck`` (populated when selecting cards
+    from the deck); a LOOKING option indexes into ``state.looking`` (the cards an
+    effect is currently revealing). Facedown / malformed refs resolve to ``None``.
+    """
+    try:
+        if option.area == AreaType.DECK:
+            if select.deck and option.index is not None and 0 <= option.index < len(select.deck):
+                return select.deck[option.index].id
+            return None
+        if option.area == AreaType.LOOKING:
+            state = obs.current
+            looking = state.looking if state is not None else None
+            if looking and option.index is not None and 0 <= option.index < len(looking):
+                card = looking[option.index]
+                return card.id if card is not None else None
+            return None
+    except (IndexError, TypeError, AttributeError):
+        return None
+    return _referenced_card_id(option, obs)
+
+
+# How much we want to *gain* a card (take it to hand / attach it from an
+# effect) — the mirror image of :data:`_DISCARD_PRIORITY`. The dominant loss
+# mode is running out of Pokémon to promote (バトル場不在), so Basic Pokémon top
+# the list as bench insurance, then evolutions, then Energy to load them.
+_GAIN_PRIORITY: dict[int, int] = {
+    int(CardType.POKEMON): 4,        # +1 more below if it is a Basic
+    int(CardType.BASIC_ENERGY): 3,
+    int(CardType.SPECIAL_ENERGY): 3,
+    int(CardType.SUPPORTER): 2,
+    int(CardType.ITEM): 2,
+    int(CardType.TOOL): 2,
+    int(CardType.STADIUM): 2,
+}
+
+
+def to_hand_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """TO_HAND (fetch a card from deck / discard / looking into hand).
+
+    SOT-1682: this context used to fall back to a *random* pick. Prefer a Basic
+    Pokémon (the dominant loss is having no Pokémon to promote), then any
+    Pokémon, then Energy, then trainers. Options referencing in-play cards
+    (a bounce effect) are deferred to the safe fallback — bouncing our own board
+    away needs a smarter rule than "gaining a card is good".
+    """
+    cards = damage.get_card_registry()
+    scored: list[tuple[int, tuple]] = []
+    for i, o in enumerate(select.option):
+        if o.area in (AreaType.ACTIVE, AreaType.BENCH):
+            return None  # bounce effect: no opinion
+        cid = _option_card_id(o, select, obs)
+        cd = cards.get(cid) if cid is not None else None
+        gain = _GAIN_PRIORITY.get(int(cd.cardType), 1) if cd is not None else 0
+        is_basic_poke = 1 if (
+            cd is not None and cd.cardType == CardType.POKEMON and cd.basic
+        ) else 0
+        hp = cd.hp if cd is not None else 0
+        scored.append((i, (gain, is_basic_poke, hp)))
+    return _top_k(scored, _pick_count(select, want_at_least_one=True))
+
+
+def attach_card_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """ATTACH_TO (pick the card an effect attaches, e.g. from LOOKING).
+
+    SOT-1682: was a random pick. Prefer Energy (Basic first — the scarcer
+    Special Energy stays available); an unknown / facedown card ranks last.
+    """
+    cards = damage.get_card_registry()
+    scored: list[tuple[int, tuple]] = []
+    for i, o in enumerate(select.option):
+        cid = _option_card_id(o, select, obs)
+        cd = cards.get(cid) if cid is not None else None
+        if cd is None:
+            rank = 0
+        elif cd.cardType == CardType.BASIC_ENERGY:
+            rank = 3
+        elif cd.cardType == CardType.SPECIAL_ENERGY:
+            rank = 2
+        else:
+            rank = 1
+        scored.append((i, (rank,)))
+    return _top_k(scored, _pick_count(select, want_at_least_one=True))
+
+
+def attach_target_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """ATTACH_FROM (pick the in-play Pokémon an effect attaches Energy to).
+
+    SOT-1682: was a random pick. Energy acceleration goes to the attacker it
+    helps most: a viable attacker still short of its best attack (smallest
+    deficit first, then the biggest weakness-aware hit on the current defender),
+    then an already-loaded attacker, and a Pokémon with no damaging attack last.
+    """
+    cards = damage.get_card_registry()
+    defender_cd = _opponent_active_card(obs)
+    scored: list[tuple[int, tuple]] = []
+    for i, o in enumerate(select.option):
+        p = _referenced_pokemon(o, obs)
+        pc = cards.get(p.id) if p is not None else None
+        if p is not None and _is_viable_attacker(pc):
+            deficit = _energy_deficit(p, pc)
+            band = 2 if deficit > 0 else 1  # still loading > already able to fire
+            scored.append((i, (band, -deficit, _best_damage_vs(pc, defender_cd))))
+        else:
+            hp = p.hp if p is not None else 0
+            scored.append((i, (0, 0, hp)))
+    return _top_k(scored, _pick_count(select, want_at_least_one=True))
+
+
+def draw_count_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """DRAW_COUNT: draw as many cards as offered.
+
+    SOT-1682: was a random pick. Games here end by board attrition (running out
+    of Pokémon), never by deck-out, so more cards is strictly more options.
+    """
+    if select.minCount > 1:
+        return None
+    best_i: Optional[int] = None
+    best_n = -1
+    for i, o in enumerate(select.option):
+        if o.type != OptionType.NUMBER or o.number is None:
+            return None  # unexpected shape: no opinion
+        if o.number > best_n:
+            best_n = o.number
+            best_i = i
+    return [best_i] if best_i is not None else None
 
 
 def heal_handler(
@@ -434,6 +639,9 @@ S_ATTACH_BENCH = 1_600.0 # ベンチ育成: load a second Bench attacker
 S_ATTACH_OVER = 900.0    # drop Energy on an already-loaded Pokémon (still > a swing)
 S_ATTACK_BASE = 500.0    # + damage: a non-lethal attack ends the turn, so swing last
 S_END = 0.0              # end the turn
+S_ATTACH_DOOMED = -0.3   # attach to an Active that dies next turn: the Energy is
+                         # discarded with it — keeping the card in hand for the
+                         # successor beats feeding the doomed Pokémon (SOT-1682)
 S_ABILITY = -0.4         # skip optional abilities (prefer END; avoids no-op loops)
 S_RETREAT_NO = -0.5      # an *unjustified* retreat: never chosen over ending the turn
 S_DISCARD = -0.6         # never voluntarily discard a card from play
@@ -480,6 +688,43 @@ def _is_viable_attacker(card) -> bool:
     return atk is not None and atk.damage > 0
 
 
+def _attach_enables_ko(poke, card, defender_cd, defender_hp) -> bool:
+    """True iff one more Energy lets ``poke`` fire an attack that KOs the defender.
+
+    Guard for the doomed-Active rule (SOT-1682): even a dying Active should be
+    fed the Energy that lets it take the Knock Out *first* this very turn.
+    """
+    if poke is None or card is None or not card.attacks:
+        return False
+    reg = damage.get_attack_registry()
+    affordable = _energy_count(poke) + 1
+    for aid in card.attacks:
+        atk = reg.get(aid)
+        if atk is None or len(atk.energies or []) > affordable:
+            continue
+        if damage.is_ko(atk, card, defender_cd, defender_hp):
+            return True
+    return False
+
+
+def _best_damage_vs(card, defender_cd) -> int:
+    """Max weakness/resistance-adjusted damage ``card`` can deal to ``defender_cd``.
+
+    ``0`` when ``card`` has no attacks (or is ``None``); with an unknown defender
+    the raw attack damage is used (``attack_damage`` treats ``None`` as neutral).
+    """
+    if card is None or not card.attacks:
+        return 0
+    reg = damage.get_attack_registry()
+    best = 0
+    for aid in card.attacks:
+        atk = reg.get(aid)
+        if atk is None:
+            continue
+        best = max(best, damage.attack_damage(atk, card, defender_cd))
+    return best
+
+
 def _inplay_pokemon(option, obs: Observation):
     """Resolve the in-play Pokémon an ATTACH / EVOLVE option targets.
 
@@ -501,15 +746,22 @@ def _inplay_pokemon(option, obs: Observation):
     return None
 
 
-def _incoming_damage(opp_active, opp_card, my_active_card) -> int:
-    """Largest damage the opponent's Active could deal to our Active next turn."""
+def _incoming_damage(opp_active, opp_card, my_active_card, *, headroom: int = 1) -> int:
+    """Largest damage the opponent's Active could deal to our Active next turn.
+
+    SOT-1682: only attacks the opponent could actually *pay for* count — cost at
+    most their attached Energy plus ``headroom`` (the one manual attachment they
+    get next turn). Without this the threat estimate triggers doom/retreat logic
+    against attacks that are turns away from being usable.
+    """
     if opp_active is None or opp_card is None or not opp_card.attacks:
         return 0
     reg = damage.get_attack_registry()
+    affordable = _energy_count(opp_active) + headroom
     worst = 0
     for aid in opp_card.attacks:
         atk = reg.get(aid)
-        if atk is None:
+        if atk is None or len(atk.energies or []) > affordable:
             continue
         worst = max(worst, damage.attack_damage(atk, opp_card, my_active_card))
     return worst
@@ -527,6 +779,10 @@ def _should_retreat(me, opp, cards) -> bool:
     **and** there is a Bench Pokémon worth promoting (a viable attacker, or one
     with more HP than the endangered Active). With no Bench, retreat is impossible
     and pointless, so we never score it up.
+
+    SOT-1682: additionally, a *dead wall* — an Active with no damaging attack —
+    retreats for a Bench attacker that can already fire, so the board never gets
+    stuck behind a Pokémon that can only pass turns.
     """
     active = me.active[0] if me.active else None
     if active is None or not me.bench:
@@ -539,6 +795,14 @@ def _should_retreat(me, opp, cards) -> bool:
     incoming = _incoming_damage(opp_active, opp_card, active_card)
     dying = active.hp is not None and incoming >= active.hp
     if not (disabled or dying):
+        if not _is_viable_attacker(active_card):
+            # Dead wall: swap only for a Bench attacker that can fire NOW (a
+            # retreat costs attached Energy, so a not-yet-loaded replacement
+            # would trade tempo for nothing).
+            for p in me.bench:
+                pc = cards.get(p.id)
+                if _is_viable_attacker(pc) and _energy_deficit(p, pc) <= 0:
+                    return True
         return False
 
     active_hp = active.hp if active.hp is not None else 0
@@ -592,20 +856,52 @@ def _score_main_option(
             line = 1.0 if damage.has_evolution_line(cd) else 0.0
             return S_PLAY_BASIC + 10.0 * line + (cd.hp or 0) / 100.0
         if cd.cardType == CardType.SUPPORTER:
-            return S_ITEM if state.supporterPlayed else S_SUPPORTER
+            if state.supporterPlayed:
+                return S_ITEM
+            # SOT-1682: with a big hand the Supporter's card advantage is worth
+            # less than spending the cards we already hold — develop first (the
+            # Supporter still gets played later in the turn at the S_ITEM rank).
+            return S_ITEM if len(hand) >= 6 else S_SUPPORTER
         return S_ITEM
     if t == OptionType.EVOLVE:
-        return S_EVOLVE
+        # SOT-1682: prefer evolving the Active, and prefer the evolution that
+        # hits the current defender hardest / adds the most HP. Tie-break stays
+        # < 100 so it can never cross the band gap down to S_PLAY_BASIC.
+        bonus = 50.0 if o.inPlayArea == AreaType.ACTIVE else 0.0
+        idx = o.index
+        evo_cd = cards.get(hand[idx].id) if (idx is not None and 0 <= idx < len(hand)) else None
+        if evo_cd is not None:
+            bonus += min(_best_damage_vs(evo_cd, defender_cd), 300) / 10.0
+            bonus += (evo_cd.hp or 0) / 100.0
+        return S_EVOLVE + bonus
     if t == OptionType.ATTACH:
         target = _inplay_pokemon(o, obs)
         card = cards.get(target.id) if target is not None else None
         if target is None:
             return S_ATTACH_OVER
-        if _energy_deficit(target, card) <= 0:
+        deficit = _energy_deficit(target, card)
+        if deficit <= 0:
             return S_ATTACH_OVER  # already able to fire its best attack
+        # SOT-1682: among attach targets, prefer the one closest to firing and
+        # the one hitting the current defender hardest (weakness-aware). Bounded
+        # to < 100 so the tie-break never crosses a band boundary.
+        bonus = 50.0 / deficit + min(_best_damage_vs(card, defender_cd), 300) / 10.0
         if o.inPlayArea == AreaType.ACTIVE:
-            return S_ATTACH_LOAD
-        return S_ATTACH_BENCH if _is_viable_attacker(card) else S_ATTACH_OVER
+            # Doomed Active (SOT-1682): if the opponent can Knock it Out next
+            # turn (and it cannot win the race by KO'ing first — a lethal ATTACK
+            # would outscore any attach anyway), the attached Energy is lost with
+            # it. Keep the card in hand for the successor instead.
+            my_active = me.active[0] if me.active else None
+            opp_active = opp.active[0] if opp.active else None
+            opp_cd = cards.get(opp_active.id) if opp_active is not None else None
+            if (
+                my_active is not None and my_active.hp is not None
+                and _incoming_damage(opp_active, opp_cd, attacker_cd) >= my_active.hp
+                and not _attach_enables_ko(target, attacker_cd, defender_cd, defender_hp)
+            ):
+                return S_ATTACH_DOOMED
+            return S_ATTACH_LOAD + bonus
+        return (S_ATTACH_BENCH + bonus) if _is_viable_attacker(card) else S_ATTACH_OVER
     if t == OptionType.RETREAT:
         return S_RETREAT_OK if _should_retreat(me, opp, cards) else S_RETREAT_NO
     if t == OptionType.ABILITY:
@@ -705,8 +1001,9 @@ class RuleBasedAgent(Agent):
     # longer rely on the random fallback. Any context still absent defers safely.
     CONTEXT_HANDLERS: dict[SelectContext, Handler] = {
         SelectContext.MAIN: main_context_handler,
-        # Setup: place the best Basic (evolution line, then HP).
-        SelectContext.SETUP_ACTIVE_POKEMON: place_basic_handler,
+        # Setup: Active is HP-first (survives the opening race, SOT-1682);
+        # Bench stays line-first (it gets the time to evolve).
+        SelectContext.SETUP_ACTIVE_POKEMON: place_basic_active_handler,
         SelectContext.SETUP_BENCH_POKEMON: place_basic_handler,
         # After a KO / on retreat: promote the readiest Bench Pokémon (Energy, HP).
         SelectContext.TO_ACTIVE: to_active_handler,
@@ -730,6 +1027,11 @@ class RuleBasedAgent(Agent):
         SelectContext.DAMAGE: damage_target_handler,
         # Healing: Active first, then the most-damaged Pokémon.
         SelectContext.HEAL: heal_handler,
+        # Card-effect selections (SOT-1682) — these used to fall back to random.
+        SelectContext.TO_HAND: to_hand_handler,
+        SelectContext.ATTACH_TO: attach_card_handler,
+        SelectContext.ATTACH_FROM: attach_target_handler,
+        SelectContext.DRAW_COUNT: draw_count_handler,
     }
 
     # SelectType -> handler. Consulted only when no CONTEXT_HANDLERS entry

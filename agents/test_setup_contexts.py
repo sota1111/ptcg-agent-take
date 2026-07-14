@@ -100,7 +100,9 @@ def _card_opt(area, index, player_index=0) -> Option:
 # 1. setup: place the best Basic
 # --------------------------------------------------------------------------- #
 
-def test_setup_active_prefers_evolution_line():
+def test_setup_active_prefers_hp():
+    # SOT-1682: the Active faces the first attacks of a short race — HP first
+    # (Kyogre 150 over line-heading Snover 90). The Bench pick stays line-first.
     agent = RuleBasedAgent(seed=0)
     hand = [Card(id=KYOGRE, serial=1, playerIndex=0),   # Basic, HP 150, no line
             Card(id=SNOVER, serial=2, playerIndex=0),   # Basic, HP 90, has line
@@ -108,8 +110,8 @@ def test_setup_active_prefers_evolution_line():
     sel = _select(SelectContext.SETUP_ACTIVE_POKEMON,
                   [_card_opt(AreaType.HAND, 0), _card_opt(AreaType.HAND, 1), _card_opt(AreaType.HAND, 2)])
     out = agent.decide(_obs(sel, [_player(hand=hand), _player()]))
-    assert out == [1], out  # Snover — evolution line ranks above HP
-    print("PASS test_setup_active_prefers_evolution_line")
+    assert out == [0], out  # Kyogre — HP ranks above the evolution line
+    print("PASS test_setup_active_prefers_hp")
 
 
 def test_setup_bench_optional_still_develops():
@@ -138,14 +140,17 @@ def test_to_active_prefers_energised_then_hp():
     print("PASS test_to_active_prefers_energised_then_hp")
 
 
-def test_to_active_hp_breaks_energy_tie():
+def test_to_active_prefers_smaller_energy_deficit():
+    # SOT-1682: with equal Energy attached, promote the Pokémon *closest to
+    # firing* — Snover (cost 2, needs 1 more) over Kyogre (cost 3, needs 2 more)
+    # even though Kyogre has more HP and a bigger attack.
     agent = RuleBasedAgent(seed=0)
     bench = [_poke(SNOVER, 90, n_energy=1), _poke(KYOGRE, 150, n_energy=1)]
     sel = _select(SelectContext.TO_ACTIVE,
                   [_card_opt(AreaType.BENCH, 0), _card_opt(AreaType.BENCH, 1)])
     out = agent.decide(_obs(sel, [_player(bench=bench), _player()]))
-    assert out == [1], out  # equal energy -> higher HP (Kyogre)
-    print("PASS test_to_active_hp_breaks_energy_tie")
+    assert out == [0], out  # Snover — smallest remaining Energy deficit
+    print("PASS test_to_active_prefers_smaller_energy_deficit")
 
 
 # --------------------------------------------------------------------------- #
@@ -279,10 +284,10 @@ def test_record_match_zero_exceptions_all_contexts():
 
 
 if __name__ == "__main__":
-    test_setup_active_prefers_evolution_line()
+    test_setup_active_prefers_hp()
     test_setup_bench_optional_still_develops()
     test_to_active_prefers_energised_then_hp()
-    test_to_active_hp_breaks_energy_tie()
+    test_to_active_prefers_smaller_energy_deficit()
     test_yesno_defaults()
     test_discard_card_sheds_energy_keeps_pokemon()
     test_discard_optional_is_noop()
