@@ -122,43 +122,6 @@ def build_agent(spec: dict):
             lambda obs_dict: rb.decide(to_observation_class(obs_dict)),
             name=name, version=spec["pkg"], params={"seed": spec.get("seed"), "policy": policy, "ref_pkg": spec["pkg"]},
         )
-    if kind == "search":
-        # One-ply search agent (SOT-1657/1658): tries each legal move on a search
-        # copy, scores the result with the damage-based evaluator, and picks the
-        # best — degrading to a legal random move on any failure. Reconstructed
-        # here from a picklable spec so a worker rebuilds it per match. The
-        # time budget / candidate cap are exposed so the vs-rule benchmark
-        # (SOT-1659) can pin them and monitor per-move thinking time.
-        from agents.search_agent import SearchAgent
-        from cg.api import to_observation_class
-        from eval.record_match import Agent
-
-        kwargs: dict[str, Any] = {"seed": spec.get("seed")}
-        if spec.get("deck_path") is not None:
-            kwargs["deck_path"] = spec["deck_path"]
-        if spec.get("time_budget_s") is not None:
-            kwargs["time_budget_s"] = spec["time_budget_s"]
-        if spec.get("max_candidates") is not None:
-            kwargs["max_candidates"] = spec["max_candidates"]
-        sa = SearchAgent(**kwargs)
-        return Agent(
-            lambda obs_dict: sa.decide(to_observation_class(obs_dict)),
-            name=name, version="1",
-            params={
-                "seed": spec.get("seed"),
-                "time_budget_s": spec.get("time_budget_s"),
-                "max_candidates": spec.get("max_candidates"),
-            },
-        )
-    if kind == "learned":
-        # Learned-policy agent (SOT-1644): scores legal moves with a trained
-        # model, falling back to a random legal move on any failure / missing
-        # model. ``model_path`` is picklable (a plain path string).
-        from agents.learned.agent import make_learned_agent
-
-        return make_learned_agent(
-            model_path=spec.get("model_path"), seed=spec.get("seed"), name=name,
-        )
     if kind == "raising":
         return make_raising_agent(after=spec.get("after", 0), name=name)
     raise ValueError(f"unknown agent kind: {kind!r}")
@@ -170,10 +133,7 @@ def agent_spec(
     seed: Optional[int] = None,
     after: int = 0,
     policy: Optional[str] = None,
-    model_path: Optional[str] = None,
     deck_path: Optional[str] = None,
-    time_budget_s: Optional[float] = None,
-    max_candidates: Optional[int] = None,
 ) -> dict:
     return {
         "kind": kind,
@@ -181,10 +141,7 @@ def agent_spec(
         "seed": seed,
         "after": after,
         "policy": policy,
-        "model_path": model_path,
         "deck_path": deck_path,
-        "time_budget_s": time_budget_s,
-        "max_candidates": max_candidates,
     }
 
 
@@ -498,8 +455,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--games", type=int, default=100, help="number of matches (rounded up to an even number of pairs)")
     p.add_argument("--deck0", default="deck.csv", help="agent A's deck CSV")
     p.add_argument("--deck1", default=None, help="agent B's deck CSV (default: same as --deck0)")
-    p.add_argument("--agent-a", default="random", choices=["random", "rule_based", "search", "learned", "raising"], help="agent A kind")
-    p.add_argument("--agent-b", default="random", choices=["random", "rule_based", "search", "learned", "raising"], help="agent B kind")
+    p.add_argument("--agent-a", default="random", choices=["random", "rule_based", "raising"], help="agent A kind")
+    p.add_argument("--agent-b", default="random", choices=["random", "rule_based", "raising"], help="agent B kind")
     p.add_argument("--policy-a", default=None, choices=["scoring", "fixed"], help="MAIN policy for a rule_based agent A")
     p.add_argument("--policy-b", default=None, choices=["scoring", "fixed"], help="MAIN policy for a rule_based agent B")
     p.add_argument("--workers", type=int, default=None, help="process pool size (default: min(games, cpu_count))")
