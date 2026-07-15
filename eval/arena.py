@@ -98,10 +98,14 @@ def build_agent(spec: dict):
         from eval.record_match import Agent
 
         policy = spec.get("policy") or "scoring"
-        rb = RuleBasedAgent(seed=spec.get("seed"), policy=policy)
+        # deck_path drives the archetype adaptation (SOT-1694): pass the deck the
+        # agent actually plays so the derived bands match the match's deck.
+        deck_path = spec.get("deck_path") or "deck.csv"
+        rb = RuleBasedAgent(seed=spec.get("seed"), policy=policy, deck_path=deck_path)
         return Agent(
             lambda obs_dict: rb.decide(to_observation_class(obs_dict)),
-            name=name, version="1", params={"seed": spec.get("seed"), "policy": policy},
+            name=name, version="1",
+            params={"seed": spec.get("seed"), "policy": policy, "deck_path": deck_path},
         )
     if kind == "rule_based_ref":
         # An *old version* of the rule-based agent, materialised from a git ref by
