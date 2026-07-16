@@ -56,6 +56,11 @@ def test_full_trace_contents():
         assert decisions, "at least one decision recorded"
 
         d0rec = decisions[0]
+        resultrec = result[0]
+        assert d0rec["learning"]["chosen_action"] == d0rec["choice"]
+        assert d0rec["learning"]["legal_actions"] == d0rec["select"]["option"]
+        assert resultrec["learning"]["reward_by_player"] in (
+            [1.0, -1.0], [-1.0, 1.0], [0.0, 0.0])
         assert d0rec["select"] is not None and "option" in d0rec["select"], "legal moves present"
         assert isinstance(d0rec["choice"], list), "choice recorded"
         assert d0rec["search_begin_input"], "search_begin_input recorded (E5)"
