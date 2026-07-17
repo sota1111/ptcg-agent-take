@@ -181,6 +181,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--md", default=None)
     p.add_argument("--neutral-bands", action="store_true",
                    help="ablation: disable archetype adaptation (handlers only)")
+    p.add_argument("--kpi", nargs="?", const="", default=None, metavar="ISSUE",
+                   help="append a KPI history record (eval/kpi.py, SOT-1709);"
+                        " optional value = Linear issue id")
     return p.parse_args(argv)
 
 
@@ -193,6 +196,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.md:
         with open(args.md, "w", encoding="utf-8") as fh:
             fh.write(render_md(rep))
+    if args.kpi is not None:
+        from eval.kpi import append_history, record_from_rotation
+        print(f"KPI: appended to "
+              f"{append_history(record_from_rotation(rep, issue=args.kpi or None))}")
     print(f"BENCH DONE: new-vs-old(@{args.old_ref}) {rep['wins']}-{rep['losses']}-{rep['draws']}"
           f" winrate={rep['winrate']:.4f} CI=[{rep['ci'][0]:.4f}, {rep['ci'][1]:.4f}]"
           f" degraded={rep['degraded']} improved={rep['improved']}"
