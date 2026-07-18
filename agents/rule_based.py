@@ -18,6 +18,7 @@ safe. No existing code needs to change and the guard keeps holding.
 
 from __future__ import annotations
 
+import os.path
 import random
 from typing import Callable, Optional
 
@@ -838,6 +839,28 @@ def heal_handler(
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
 
 
+def remove_damage_count_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """REMOVE_DAMAGE_COUNTER_COUNT: remove as many damage counters as offered.
+
+    SOT-1707 cycle 2: opened by the ability budget (healing abilities were never
+    reached while abilities were banned) — was a random fallback. Healing is
+    free value; the deck guards do not apply because no cards are drawn.
+    """
+    if select.minCount > 1:
+        return None
+    best_i: Optional[int] = None
+    best_n: Optional[int] = None
+    for i, o in enumerate(select.option):
+        if o.type != OptionType.NUMBER or o.number is None:
+            return None  # unexpected shape: no opinion
+        if best_n is None or o.number > best_n:
+            best_n = o.number
+            best_i = i
+    return [best_i] if best_i is not None else None
+
+
 # --------------------------------------------------------------------------- #
 # Scoring MAIN policy (SOT-1635, R4).
 #
@@ -881,6 +904,7 @@ S_ATTACH_BENCH = 1_600.0 # ベンチ育成: load a second Bench attacker
 S_ATTACH_OVER = 900.0    # drop Energy on an already-loaded Pokémon (still > a swing)
 S_ATTACK_BASE = 500.0    # + damage: a non-lethal attack ends the turn, so swing last
 S_END = 0.0              # end the turn
+S_ABILITY_ON = 1_800.0   # use a Pokémon ability (draw / search engines), budget-guarded
 S_EVOLVE_DOOMED = 800.0  # evolve an Active that dies next turn even evolved: the
                          # evolution card is lost with it — develop elsewhere first,
                          # but still above a swing (evolving never ends the turn)
@@ -890,9 +914,72 @@ S_DECK_GUARD = -0.2      # a Supporter with the deck nearly empty: Supporters ar
 S_ATTACH_DOOMED = -0.3   # attach to an Active that dies next turn: the Energy is
                          # discarded with it — keeping the card in hand for the
                          # successor beats feeding the doomed Pokémon (SOT-1682)
-S_ABILITY = -0.4         # skip optional abilities (prefer END; avoids no-op loops)
+S_ABILITY = -0.4         # ability once the per-turn budget is spent (or the deck is
+                         # low): prefer END — the budget is what avoids no-op loops
 S_RETREAT_NO = -0.5      # an *unjustified* retreat: never chosen over ending the turn
 S_DISCARD = -0.6         # never voluntarily discard a card from play
+
+# Ability budget (SOT-1707): MAIN ABILITY options used to be *never* chosen
+# (S_ABILITY < S_END) because a state-preserving ability would be re-picked
+# forever. Instead of banning them, cap ability uses per turn — draw/search
+# engines (e.g. Dudunsparce) are exactly the card advantage the decks are built
+# around. The deck-low guard still applies (most abilities dig the deck).
+ABILITY_BUDGET_PER_TURN = 8
+
+# Abilities are draw/search-heavy, so they get their own, much earlier deck
+# floor: with ≤ this many cards left the budget reads as spent. Chosen by A/B
+# (SOT-1707 cycle 2): floor 6 shifted losses wholesale into deck_out.
+ABILITY_DECK_FLOOR = 27
+
+# Deck-parity guard (SOT-1707 cycle 3/4): self-mill draw engines turned the
+# ability budget into deck-out losses on grind decks (N's Zoroark ν/ex and
+# Alakazam-Dudunsparce lost 0.30-0.35 of mirrors with 70%+ deck_out). Abilities
+# pause while the own deck is thinner than the opponent's by more than this
+# margin, so digging can never out-mill the opponent's natural draw rate.
+# Cycle 3 measured the guard globally: it repaired the grind decks (e.g.
+# 07_n_s_zoroark_n 0.300→0.500) but throttled the decks whose abilities win
+# prize races (06_hydrapple 0.750→0.525, 05_dragapult_dudunsparce 0.688→0.550)
+# for a flat 0.517 aggregate — so cycle 4 keys it per deck instead. Only decks
+# whose cycle-3 deck_out losses causally dropped under the guard are listed;
+# composition detection would misfire (05 shares Dudunsparce with 12 but is
+# hurt by the guard). An unknown deck (e.g. a submission deck.csv) plays
+# unguarded, i.e. the pre-cycle-3 champion behaviour.
+ABILITY_PARITY_MARGIN = -3
+
+# Deck stems (deck_path basename without .csv) whose MAIN abilities obey the
+# parity guard. Cycle-3 evidence, deck_out losses per 80: 07: 42→24,
+# 24: 40→37, 12: 37→33, 20: 19→10, 18: 20→15.
+ABILITY_PARITY_DECKS = frozenset({
+    "07_n_s_zoroark_n",
+    "12_alakazam_dudunsparce",
+    "18_rocket_s_honchkrow",
+    "20_cynthia_s_garchomp_ex",
+    "24_n_s_zoroark_ex_naic_10th",
+})
+
+
+def _ability_deck_parity_ok(obs: Observation) -> bool:
+    """True iff own deck is not more than the margin thinner than opponent's."""
+    state = obs.current
+    if state is None:
+        return True
+    try:
+        me = state.players[state.yourIndex]
+        opp = state.players[1 - state.yourIndex]
+        return me.deckCount + ABILITY_PARITY_MARGIN >= opp.deckCount
+    except (IndexError, TypeError, AttributeError):
+        return True
+
+
+def _own_deck_below(obs: Observation, floor: int) -> bool:
+    """True iff the deciding player's own deck has ``floor`` cards or fewer."""
+    state = obs.current
+    if state is None:
+        return False
+    try:
+        return state.players[state.yourIndex].deckCount <= floor
+    except (IndexError, TypeError, AttributeError):
+        return False
 
 # Deck-out guard (SOT-1694): at or below this many cards left, stop volunteering
 # draws (max DRAW_COUNT, optional ACTIVATE effects, Supporters) — every turn start
@@ -1081,6 +1168,7 @@ def _should_retreat(me, opp, cards) -> bool:
 def _score_main_option(
     o, obs: Observation, *, cards, me, opp, state, hand, bench_open,
     attacker_cd, defender_cd, defender_hp, bands: BandAdjust,
+    ability_ok: bool = False,
 ) -> Optional[float]:
     """Score a single MAIN option (higher = better), or ``None`` to ignore it.
 
@@ -1196,7 +1284,7 @@ def _score_main_option(
     if t == OptionType.RETREAT:
         return S_RETREAT_OK if _should_retreat(me, opp, cards) else S_RETREAT_NO
     if t == OptionType.ABILITY:
-        return S_ABILITY
+        return S_ABILITY_ON if ability_ok else S_ABILITY
     if t == OptionType.DISCARD:
         return S_DISCARD
     return None
@@ -1233,6 +1321,18 @@ def scoring_main_context_handler(
     bench_open = len(me.bench) < me.benchMax
 
     bands = getattr(agent, "bands", None) or BandAdjust()
+    # Ability budget (SOT-1707): reset the counter when the turn changes; an
+    # ability is worth choosing while budget remains and the deck is not low.
+    turn = getattr(state, "turn", None)
+    if getattr(agent, "_ability_turn", None) != turn:
+        agent._ability_turn = turn
+        agent._ability_uses = 0
+    ability_ok = (
+        getattr(agent, "_ability_uses", 0) < ABILITY_BUDGET_PER_TURN
+        and not _own_deck_below(obs, ABILITY_DECK_FLOOR)
+        and (not getattr(agent, "_ability_parity_guarded", False)
+             or _ability_deck_parity_ok(obs))
+    )
     best_i: Optional[int] = None
     best_s: Optional[float] = None
     for i, o in enumerate(select.option):
@@ -1240,6 +1340,7 @@ def scoring_main_context_handler(
             o, obs, cards=cards, me=me, opp=opp, state=state, hand=hand,
             bench_open=bench_open, attacker_cd=attacker_cd,
             defender_cd=defender_cd, defender_hp=defender_hp, bands=bands,
+            ability_ok=ability_ok,
         )
         if s is None:
             continue
@@ -1248,6 +1349,8 @@ def scoring_main_context_handler(
             best_i = i
     if best_i is None:
         return None
+    if select.option[best_i].type == OptionType.ABILITY:
+        agent._ability_uses = getattr(agent, "_ability_uses", 0) + 1
     return [best_i]
 
 
@@ -1319,6 +1422,10 @@ class RuleBasedAgent(Agent):
         SelectContext.DAMAGE: damage_target_handler,
         # Healing: Active first, then the most-damaged Pokémon.
         SelectContext.HEAL: heal_handler,
+        # Ability-budget fallback holes (SOT-1707 cycle 2) — healing abilities
+        # opened these once MAIN ABILITY options became choosable (cycle 1).
+        SelectContext.REMOVE_DAMAGE_COUNTER: heal_handler,
+        SelectContext.REMOVE_DAMAGE_COUNTER_COUNT: remove_damage_count_handler,
         # Card-effect selections (SOT-1682) — these used to fall back to random.
         SelectContext.TO_HAND: to_hand_handler,
         SelectContext.ATTACH_TO: attach_card_handler,
@@ -1375,6 +1482,14 @@ class RuleBasedAgent(Agent):
         # Archetype adaptation (SOT-1694): derive bounded scoring-band nudges
         # from the deck's composition, once per match. Best-effort — an
         # unreadable deck or registry leaves the neutral (all-zero) adjustment.
+        # Ability budget bookkeeping (SOT-1707): per-turn use counter so that a
+        # state-preserving ability cannot be re-picked forever.
+        self._ability_turn: Optional[int] = None
+        self._ability_uses: int = 0
+        # Deck-conditional parity guard (SOT-1707 cycle 4): only known
+        # deck-out-prone decks pause abilities on deck-parity deficit.
+        stem = os.path.splitext(os.path.basename(deck_path))[0]
+        self._ability_parity_guarded: bool = stem in ABILITY_PARITY_DECKS
         self.bands = BandAdjust()
         try:
             deck = read_deck_csv(deck_path)
