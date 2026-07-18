@@ -838,6 +838,28 @@ def heal_handler(
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
 
 
+def remove_damage_count_handler(
+    agent: "RuleBasedAgent", select: SelectData, obs: Observation
+) -> Optional[list[int]]:
+    """REMOVE_DAMAGE_COUNTER_COUNT: remove as many damage counters as offered.
+
+    SOT-1707 cycle 2: opened by the ability budget (healing abilities were never
+    reached while abilities were banned) — was a random fallback. Healing is
+    free value; the deck guards do not apply because no cards are drawn.
+    """
+    if select.minCount > 1:
+        return None
+    best_i: Optional[int] = None
+    best_n: Optional[int] = None
+    for i, o in enumerate(select.option):
+        if o.type != OptionType.NUMBER or o.number is None:
+            return None  # unexpected shape: no opinion
+        if best_n is None or o.number > best_n:
+            best_n = o.number
+            best_i = i
+    return [best_i] if best_i is not None else None
+
+
 # --------------------------------------------------------------------------- #
 # Scoring MAIN policy (SOT-1635, R4).
 #
@@ -1358,6 +1380,10 @@ class RuleBasedAgent(Agent):
         SelectContext.DAMAGE: damage_target_handler,
         # Healing: Active first, then the most-damaged Pokémon.
         SelectContext.HEAL: heal_handler,
+        # Ability-budget fallback holes (SOT-1707 cycle 2) — healing abilities
+        # opened these once MAIN ABILITY options became choosable (cycle 1).
+        SelectContext.REMOVE_DAMAGE_COUNTER: heal_handler,
+        SelectContext.REMOVE_DAMAGE_COUNTER_COUNT: remove_damage_count_handler,
         # Card-effect selections (SOT-1682) — these used to fall back to random.
         SelectContext.TO_HAND: to_hand_handler,
         SelectContext.ATTACH_TO: attach_card_handler,
