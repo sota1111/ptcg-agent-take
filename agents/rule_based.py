@@ -18,6 +18,7 @@ safe. No existing code needs to change and the guard keeps holding.
 
 from __future__ import annotations
 
+import os.path
 import random
 from typing import Callable, Optional
 
@@ -930,6 +931,45 @@ ABILITY_BUDGET_PER_TURN = 8
 # (SOT-1707 cycle 2): floor 6 shifted losses wholesale into deck_out.
 ABILITY_DECK_FLOOR = 27
 
+# Deck-parity guard (SOT-1707 cycle 3/4): self-mill draw engines turned the
+# ability budget into deck-out losses on grind decks (N's Zoroark ν/ex and
+# Alakazam-Dudunsparce lost 0.30-0.35 of mirrors with 70%+ deck_out). Abilities
+# pause while the own deck is thinner than the opponent's by more than this
+# margin, so digging can never out-mill the opponent's natural draw rate.
+# Cycle 3 measured the guard globally: it repaired the grind decks (e.g.
+# 07_n_s_zoroark_n 0.300→0.500) but throttled the decks whose abilities win
+# prize races (06_hydrapple 0.750→0.525, 05_dragapult_dudunsparce 0.688→0.550)
+# for a flat 0.517 aggregate — so cycle 4 keys it per deck instead. Only decks
+# whose cycle-3 deck_out losses causally dropped under the guard are listed;
+# composition detection would misfire (05 shares Dudunsparce with 12 but is
+# hurt by the guard). An unknown deck (e.g. a submission deck.csv) plays
+# unguarded, i.e. the pre-cycle-3 champion behaviour.
+ABILITY_PARITY_MARGIN = -3
+
+# Deck stems (deck_path basename without .csv) whose MAIN abilities obey the
+# parity guard. Cycle-3 evidence, deck_out losses per 80: 07: 42→24,
+# 24: 40→37, 12: 37→33, 20: 19→10, 18: 20→15.
+ABILITY_PARITY_DECKS = frozenset({
+    "07_n_s_zoroark_n",
+    "12_alakazam_dudunsparce",
+    "18_rocket_s_honchkrow",
+    "20_cynthia_s_garchomp_ex",
+    "24_n_s_zoroark_ex_naic_10th",
+})
+
+
+def _ability_deck_parity_ok(obs: Observation) -> bool:
+    """True iff own deck is not more than the margin thinner than opponent's."""
+    state = obs.current
+    if state is None:
+        return True
+    try:
+        me = state.players[state.yourIndex]
+        opp = state.players[1 - state.yourIndex]
+        return me.deckCount + ABILITY_PARITY_MARGIN >= opp.deckCount
+    except (IndexError, TypeError, AttributeError):
+        return True
+
 
 def _own_deck_below(obs: Observation, floor: int) -> bool:
     """True iff the deciding player's own deck has ``floor`` cards or fewer."""
@@ -1290,6 +1330,8 @@ def scoring_main_context_handler(
     ability_ok = (
         getattr(agent, "_ability_uses", 0) < ABILITY_BUDGET_PER_TURN
         and not _own_deck_below(obs, ABILITY_DECK_FLOOR)
+        and (not getattr(agent, "_ability_parity_guarded", False)
+             or _ability_deck_parity_ok(obs))
     )
     best_i: Optional[int] = None
     best_s: Optional[float] = None
@@ -1444,6 +1486,10 @@ class RuleBasedAgent(Agent):
         # state-preserving ability cannot be re-picked forever.
         self._ability_turn: Optional[int] = None
         self._ability_uses: int = 0
+        # Deck-conditional parity guard (SOT-1707 cycle 4): only known
+        # deck-out-prone decks pause abilities on deck-parity deficit.
+        stem = os.path.splitext(os.path.basename(deck_path))[0]
+        self._ability_parity_guarded: bool = stem in ABILITY_PARITY_DECKS
         self.bands = BandAdjust()
         try:
             deck = read_deck_csv(deck_path)
