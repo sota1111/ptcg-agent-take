@@ -881,6 +881,7 @@ S_ATTACH_BENCH = 1_600.0 # ベンチ育成: load a second Bench attacker
 S_ATTACH_OVER = 900.0    # drop Energy on an already-loaded Pokémon (still > a swing)
 S_ATTACK_BASE = 500.0    # + damage: a non-lethal attack ends the turn, so swing last
 S_END = 0.0              # end the turn
+S_ABILITY_ON = 1_800.0   # use a Pokémon ability (draw / search engines), budget-guarded
 S_EVOLVE_DOOMED = 800.0  # evolve an Active that dies next turn even evolved: the
                          # evolution card is lost with it — develop elsewhere first,
                          # but still above a swing (evolving never ends the turn)
@@ -890,9 +891,33 @@ S_DECK_GUARD = -0.2      # a Supporter with the deck nearly empty: Supporters ar
 S_ATTACH_DOOMED = -0.3   # attach to an Active that dies next turn: the Energy is
                          # discarded with it — keeping the card in hand for the
                          # successor beats feeding the doomed Pokémon (SOT-1682)
-S_ABILITY = -0.4         # skip optional abilities (prefer END; avoids no-op loops)
+S_ABILITY = -0.4         # ability once the per-turn budget is spent (or the deck is
+                         # low): prefer END — the budget is what avoids no-op loops
 S_RETREAT_NO = -0.5      # an *unjustified* retreat: never chosen over ending the turn
 S_DISCARD = -0.6         # never voluntarily discard a card from play
+
+# Ability budget (SOT-1707): MAIN ABILITY options used to be *never* chosen
+# (S_ABILITY < S_END) because a state-preserving ability would be re-picked
+# forever. Instead of banning them, cap ability uses per turn — draw/search
+# engines (e.g. Dudunsparce) are exactly the card advantage the decks are built
+# around. The deck-low guard still applies (most abilities dig the deck).
+ABILITY_BUDGET_PER_TURN = 8
+
+# Abilities are draw/search-heavy, so they get their own, much earlier deck
+# floor: with ≤ this many cards left the budget reads as spent. Chosen by A/B
+# (SOT-1707 cycle 2): floor 6 shifted losses wholesale into deck_out.
+ABILITY_DECK_FLOOR = 27
+
+
+def _own_deck_below(obs: Observation, floor: int) -> bool:
+    """True iff the deciding player's own deck has ``floor`` cards or fewer."""
+    state = obs.current
+    if state is None:
+        return False
+    try:
+        return state.players[state.yourIndex].deckCount <= floor
+    except (IndexError, TypeError, AttributeError):
+        return False
 
 # Deck-out guard (SOT-1694): at or below this many cards left, stop volunteering
 # draws (max DRAW_COUNT, optional ACTIVATE effects, Supporters) — every turn start
@@ -1081,6 +1106,7 @@ def _should_retreat(me, opp, cards) -> bool:
 def _score_main_option(
     o, obs: Observation, *, cards, me, opp, state, hand, bench_open,
     attacker_cd, defender_cd, defender_hp, bands: BandAdjust,
+    ability_ok: bool = False,
 ) -> Optional[float]:
     """Score a single MAIN option (higher = better), or ``None`` to ignore it.
 
@@ -1196,7 +1222,7 @@ def _score_main_option(
     if t == OptionType.RETREAT:
         return S_RETREAT_OK if _should_retreat(me, opp, cards) else S_RETREAT_NO
     if t == OptionType.ABILITY:
-        return S_ABILITY
+        return S_ABILITY_ON if ability_ok else S_ABILITY
     if t == OptionType.DISCARD:
         return S_DISCARD
     return None
@@ -1233,6 +1259,16 @@ def scoring_main_context_handler(
     bench_open = len(me.bench) < me.benchMax
 
     bands = getattr(agent, "bands", None) or BandAdjust()
+    # Ability budget (SOT-1707): reset the counter when the turn changes; an
+    # ability is worth choosing while budget remains and the deck is not low.
+    turn = getattr(state, "turn", None)
+    if getattr(agent, "_ability_turn", None) != turn:
+        agent._ability_turn = turn
+        agent._ability_uses = 0
+    ability_ok = (
+        getattr(agent, "_ability_uses", 0) < ABILITY_BUDGET_PER_TURN
+        and not _own_deck_below(obs, ABILITY_DECK_FLOOR)
+    )
     best_i: Optional[int] = None
     best_s: Optional[float] = None
     for i, o in enumerate(select.option):
@@ -1240,6 +1276,7 @@ def scoring_main_context_handler(
             o, obs, cards=cards, me=me, opp=opp, state=state, hand=hand,
             bench_open=bench_open, attacker_cd=attacker_cd,
             defender_cd=defender_cd, defender_hp=defender_hp, bands=bands,
+            ability_ok=ability_ok,
         )
         if s is None:
             continue
@@ -1248,6 +1285,8 @@ def scoring_main_context_handler(
             best_i = i
     if best_i is None:
         return None
+    if select.option[best_i].type == OptionType.ABILITY:
+        agent._ability_uses = getattr(agent, "_ability_uses", 0) + 1
     return [best_i]
 
 
@@ -1375,6 +1414,10 @@ class RuleBasedAgent(Agent):
         # Archetype adaptation (SOT-1694): derive bounded scoring-band nudges
         # from the deck's composition, once per match. Best-effort — an
         # unreadable deck or registry leaves the neutral (all-zero) adjustment.
+        # Ability budget bookkeeping (SOT-1707): per-turn use counter so that a
+        # state-preserving ability cannot be re-picked forever.
+        self._ability_turn: Optional[int] = None
+        self._ability_uses: int = 0
         self.bands = BandAdjust()
         try:
             deck = read_deck_csv(deck_path)
