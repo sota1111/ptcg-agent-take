@@ -47,7 +47,12 @@ from cg.api import (  # noqa: E402
 )
 
 from agents.base import is_valid_selection  # noqa: E402
-from agents.rule_based import RuleBasedAgent, evaluate_position  # noqa: E402
+from agents.rule_based import (  # noqa: E402
+    RuleBasedAgent,
+    _horizon_adjustment,
+    adaptive_search_depth,
+    evaluate_position,
+)
 
 # Real engine card ids.
 KYOGRE = 721      # Basic, HP 150, retreat 3, Swirling Waves 130 dmg (3E)
@@ -313,6 +318,36 @@ def test_unknown_policy_rejected():
 
 
 # --------------------------------------------------------------------------- #
+# SOT-1734 adaptive horizon regression fixtures
+# --------------------------------------------------------------------------- #
+
+def test_adaptive_depth_tracks_branching_and_remaining_turns():
+    me = _player(active=[_poke(KYOGRE, 150)], prize_n=6)
+    opp = _player(active=[_poke(SNOVER, 90)])
+    obs = _main_obs([_END] * 5, me, opp)
+    assert adaptive_search_depth(obs, branching=5, enabled=True) == 3
+    assert adaptive_search_depth(obs, branching=8, enabled=True) == 2
+    assert adaptive_search_depth(obs, branching=11, enabled=True) == 1
+    assert adaptive_search_depth(obs, branching=5, enabled=False) == 1
+
+    # At the end of the prize race there is no multi-turn continuation to buy.
+    me.prize = [Card(id=0, serial=0, playerIndex=0)]
+    assert adaptive_search_depth(obs, branching=5, enabled=True) == 2
+    print("PASS test_adaptive_depth_tracks_branching_and_remaining_turns")
+
+
+def test_immediate_reward_trap_prefers_future_board_value():
+    # Regression fixture: at depth three an EVOLVE continuation gains 840 while
+    # an immediate non-lethal ATTACK loses 440.  The 1,280 swing is deliberately
+    # larger than the biggest ordinary attack tie-break, while lethal remains in
+    # its protected 10k band in the integration scorer.
+    assert _horizon_adjustment(OptionType.EVOLVE, 3) == 840.0
+    assert _horizon_adjustment(OptionType.ATTACK, 3) == -440.0
+    assert _horizon_adjustment(OptionType.ATTACK, 1) == 0.0
+    print("PASS test_immediate_reward_trap_prefers_future_board_value")
+
+
+# --------------------------------------------------------------------------- #
 # 9. robustness
 # --------------------------------------------------------------------------- #
 
@@ -370,6 +405,8 @@ if __name__ == "__main__":
     test_evaluate_position_prizes_dominate()
     test_fixed_policy_does_not_play_supporter()
     test_unknown_policy_rejected()
+    test_adaptive_depth_tracks_branching_and_remaining_turns()
+    test_immediate_reward_trap_prefers_future_board_value()
     test_scoring_defers_safely_on_degenerate_obs()
     test_both_policies_zero_exceptions_full_matches()
     print("ALL SCORING TESTS PASSED")
