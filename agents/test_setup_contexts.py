@@ -171,6 +171,22 @@ def test_to_active_avoids_promoting_multi_prize_fodder():
     print("PASS test_to_active_avoids_promoting_multi_prize_fodder")
 
 
+def test_to_active_feeds_fodder_over_doomed_loaded_ex():
+    # SOT-1730: the loaded Iron Thorns ex can fire but cannot KO the healthy
+    # Gouging Fire ex and dies to its affordable 260 next turn — a net −2 prize
+    # trade. It loses the can-fire privilege: the unloaded 1-prize Snover soaks
+    # the hit instead, stretching the opponent's prize clock while the ex
+    # survives to swing later.
+    agent = RuleBasedAgent(seed=0)
+    bench = [_poke(IRON_THORNS_EX, 230, n_energy=3), _poke(SNOVER, 90, n_energy=0)]
+    opp = _player(active=[_poke(GOUGING_FIRE_EX, 230, n_energy=3)])
+    sel = _select(SelectContext.TO_ACTIVE,
+                  [_card_opt(AreaType.BENCH, 0), _card_opt(AreaType.BENCH, 1)])
+    out = agent.decide(_obs(sel, [_player(bench=bench), opp]))
+    assert out == [1], out  # Snover — cheap body, the ex is preserved
+    print("PASS test_to_active_feeds_fodder_over_doomed_loaded_ex")
+
+
 def test_to_active_keeps_damage_order_without_threat():
     # SOT-1730 guard: with no affordable counter-threat (opponent Active has no
     # Energy), the prize-trade term is neutral and the SOT-1682 damage order
@@ -321,6 +337,7 @@ if __name__ == "__main__":
     test_to_active_prefers_energised_then_hp()
     test_to_active_prefers_smaller_energy_deficit()
     test_to_active_avoids_promoting_multi_prize_fodder()
+    test_to_active_feeds_fodder_over_doomed_loaded_ex()
     test_to_active_keeps_damage_order_without_threat()
     test_yesno_defaults()
     test_discard_card_sheds_energy_keeps_pokemon()

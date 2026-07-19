@@ -322,8 +322,8 @@ def to_active_handler(
     """TO_ACTIVE (after a Knock Out) / SWITCH: promote the best Bench Pokémon.
 
     Prefer a Pokémon that can fire a damaging attack *right now* (SOT-1682), then
-    the one closest to firing (smallest Energy deficit), then the better **prize
-    trade** (SOT-1730), then the one hitting the current defender hardest
+    the better **prize trade** (SOT-1730), then the one closest to firing
+    (smallest Energy deficit), then the one hitting the current defender hardest
     (weakness/resistance-aware), then the cheaper prize gift, then higher HP.
 
     The prize trade scores the promotion like the race it starts: Knocking Out
@@ -332,7 +332,9 @@ def to_active_handler(
     candidate's own prize value. Mirror-loss traces (SOT-1730) show 2-prize ex
     promoted as fodder — dying without a return KO — is the dominant conceded
     multi-prize event, so a 1-prize attacker making the same trade now wins the
-    tie instead.
+    tie instead. A firing candidate whose trade *concedes* 2+ net prizes also
+    loses its can-fire privilege: feeding a cheap body instead stretches the
+    opponent's prize clock by a KO while the engine survives to swing later.
     """
     cards = damage.get_card_registry()
     defender_cd = _opponent_active_card(obs)
@@ -361,8 +363,12 @@ def to_active_handler(
         race = (_prize_value(defender_cd) if ko_now else 0) - (
             _prize_value(pc) if dies_next else 0
         )
+        # A promotion that concedes 2+ net prizes without a return KO is a
+        # multi-prize gift, not an attacker — rank it with the non-firing
+        # bodies so cheaper fodder soaks the hit first.
+        fire_rank = can_fire if race > -2 else 0
         hp = p.hp if p is not None else 0
-        scored.append((i, (can_fire, -deficit, race, dmg, -_prize_value(pc), hp)))
+        scored.append((i, (fire_rank, race, -deficit, dmg, -_prize_value(pc), hp)))
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
 
 
