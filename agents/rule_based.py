@@ -957,6 +957,60 @@ ABILITY_PARITY_DECKS = frozenset({
     "24_n_s_zoroark_ex_naic_10th",
 })
 
+# SOT-1734 baseline (25-deck mirror, seed 20260719) identified these decks as
+# the bottom cohort.  They benefit from looking past the immediately available
+# damage and preserving a multi-turn board; other decks retain the champion's
+# proven one-step ordering.
+ADAPTIVE_SEARCH_DECKS = frozenset({
+    "01_dragapult",
+    "03_dragapult_blaziken",
+    "06_hydrapple",
+    "08_ogerpon_box",
+    "21_lillie_s_clefairy_ex_naic_champion",
+    "23_slowking_naic_4th",
+    "24_n_s_zoroark_ex_naic_10th",
+})
+
+
+def adaptive_search_depth(obs: Observation, branching: int, enabled: bool) -> int:
+    """Return a bounded tactical horizon from width and remaining game length.
+
+    Wide positions stay at depth one to keep decision time predictable.  A
+    low-win deck gets two plies when the option set is tractable, and three only
+    in a narrow position with at least three forced draws/prize turns left.
+    This is a deterministic selective-extension policy rather than an engine
+    rollout, so hidden cards are never guessed and legality remains unchanged.
+    """
+    if not enabled or branching > 10:
+        return 1
+    state = obs.current
+    if state is None:
+        return 1
+    try:
+        me = state.players[state.yourIndex]
+        turns_left = min(me.deckCount, max(1, len(me.prize)))
+    except (IndexError, TypeError, AttributeError):
+        return 1
+    return 3 if branching <= 5 and turns_left >= 3 else 2
+
+
+def _horizon_adjustment(option_type, depth: int) -> float:
+    """Approximate future board value for MAIN actions at a selective depth."""
+    if depth <= 1:
+        return 0.0
+    future = float(depth - 1)
+    if option_type == OptionType.EVOLVE:
+        return 420.0 * future
+    if option_type == OptionType.ATTACH:
+        return 300.0 * future
+    if option_type == OptionType.PLAY:
+        return 180.0 * future
+    if option_type == OptionType.ATTACK:
+        # Lethal attacks remain protected by their 10k band.  This only stops a
+        # tempting non-lethal swing from ending a turn before durable setup.
+        return -220.0 * future
+    return 0.0
+
 
 def _ability_deck_parity_ok(obs: Observation) -> bool:
     """True iff own deck is not more than the margin thinner than opponent's."""
@@ -1333,6 +1387,9 @@ def scoring_main_context_handler(
         and (not getattr(agent, "_ability_parity_guarded", False)
              or _ability_deck_parity_ok(obs))
     )
+    search_depth = adaptive_search_depth(
+        obs, len(select.option), getattr(agent, "_adaptive_search", False)
+    )
     best_i: Optional[int] = None
     best_s: Optional[float] = None
     for i, o in enumerate(select.option):
@@ -1344,6 +1401,10 @@ def scoring_main_context_handler(
         )
         if s is None:
             continue
+        # Keep terminal KO ordering absolute; all other choices receive the
+        # bounded continuation value of the selected horizon.
+        if s < S_LETHAL:
+            s += _horizon_adjustment(o.type, search_depth)
         if best_s is None or s > best_s:  # strict '>' keeps the first (lowest) index on ties
             best_s = s
             best_i = i
@@ -1490,6 +1551,7 @@ class RuleBasedAgent(Agent):
         # deck-out-prone decks pause abilities on deck-parity deficit.
         stem = os.path.splitext(os.path.basename(deck_path))[0]
         self._ability_parity_guarded: bool = stem in ABILITY_PARITY_DECKS
+        self._adaptive_search: bool = stem in ADAPTIVE_SEARCH_DECKS
         self.bands = BandAdjust()
         try:
             deck = read_deck_csv(deck_path)
