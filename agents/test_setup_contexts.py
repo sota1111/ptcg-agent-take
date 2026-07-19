@@ -52,6 +52,9 @@ ABOMA = 723       # Stage1, HP 350 (not Basic)
 BASIC_W = 3       # Basic {W} Energy
 SPECIAL_E = 9     # a Special Energy
 ITEM = 1077       # an Item card
+IRON_THORNS_EX = 37   # Basic ex, HP 230, best attack 140 (cost 3) — 2 prizes
+PINSIR = 25           # Basic, HP 110, best attack 100 (cost 3) — 1 prize
+GOUGING_FIRE_EX = 46  # Basic ex, HP 230, best attack 260 (cost 3)
 
 
 def _poke(cid: int, hp: int, *, max_hp: int | None = None, n_energy: int = 0) -> Pokemon:
@@ -151,6 +154,51 @@ def test_to_active_prefers_smaller_energy_deficit():
     out = agent.decide(_obs(sel, [_player(bench=bench), _player()]))
     assert out == [0], out  # Snover — smallest remaining Energy deficit
     print("PASS test_to_active_prefers_smaller_energy_deficit")
+
+
+def test_to_active_avoids_promoting_multi_prize_fodder():
+    # SOT-1730: the opponent's loaded Gouging Fire ex (260 dmg affordable) KOs
+    # either candidate next turn and neither returns a KO — a lost trade either
+    # way, so promote the 1-prize Pinsir (110 HP) as the fodder rather than the
+    # 2-prize Iron Thorns ex (230 HP), even though the ex hits harder.
+    agent = RuleBasedAgent(seed=0)
+    bench = [_poke(IRON_THORNS_EX, 230, n_energy=3), _poke(PINSIR, 110, n_energy=3)]
+    opp = _player(active=[_poke(GOUGING_FIRE_EX, 230, n_energy=3)])
+    sel = _select(SelectContext.TO_ACTIVE,
+                  [_card_opt(AreaType.BENCH, 0), _card_opt(AreaType.BENCH, 1)])
+    out = agent.decide(_obs(sel, [_player(bench=bench), opp]))
+    assert out == [1], out  # Pinsir — cheaper prize gift in a dead race
+    print("PASS test_to_active_avoids_promoting_multi_prize_fodder")
+
+
+def test_to_active_feeds_fodder_over_doomed_loaded_ex():
+    # SOT-1730: the loaded Iron Thorns ex can fire but cannot KO the healthy
+    # Gouging Fire ex and dies to its affordable 260 next turn — a net −2 prize
+    # trade. It loses the can-fire privilege: the unloaded 1-prize Snover soaks
+    # the hit instead, stretching the opponent's prize clock while the ex
+    # survives to swing later.
+    agent = RuleBasedAgent(seed=0)
+    bench = [_poke(IRON_THORNS_EX, 230, n_energy=3), _poke(SNOVER, 90, n_energy=0)]
+    opp = _player(active=[_poke(GOUGING_FIRE_EX, 230, n_energy=3)])
+    sel = _select(SelectContext.TO_ACTIVE,
+                  [_card_opt(AreaType.BENCH, 0), _card_opt(AreaType.BENCH, 1)])
+    out = agent.decide(_obs(sel, [_player(bench=bench), opp]))
+    assert out == [1], out  # Snover — cheap body, the ex is preserved
+    print("PASS test_to_active_feeds_fodder_over_doomed_loaded_ex")
+
+
+def test_to_active_keeps_damage_order_without_threat():
+    # SOT-1730 guard: with no affordable counter-threat (opponent Active has no
+    # Energy), the prize-trade term is neutral and the SOT-1682 damage order
+    # stands — Iron Thorns ex (140) over Pinsir (100).
+    agent = RuleBasedAgent(seed=0)
+    bench = [_poke(IRON_THORNS_EX, 230, n_energy=3), _poke(PINSIR, 110, n_energy=3)]
+    opp = _player(active=[_poke(GOUGING_FIRE_EX, 230, n_energy=0)])
+    sel = _select(SelectContext.TO_ACTIVE,
+                  [_card_opt(AreaType.BENCH, 0), _card_opt(AreaType.BENCH, 1)])
+    out = agent.decide(_obs(sel, [_player(bench=bench), opp]))
+    assert out == [0], out  # Iron Thorns ex — hardest hit, no dying penalty
+    print("PASS test_to_active_keeps_damage_order_without_threat")
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +336,9 @@ if __name__ == "__main__":
     test_setup_bench_optional_still_develops()
     test_to_active_prefers_energised_then_hp()
     test_to_active_prefers_smaller_energy_deficit()
+    test_to_active_avoids_promoting_multi_prize_fodder()
+    test_to_active_feeds_fodder_over_doomed_loaded_ex()
+    test_to_active_keeps_damage_order_without_threat()
     test_yesno_defaults()
     test_discard_card_sheds_energy_keeps_pokemon()
     test_discard_optional_is_noop()

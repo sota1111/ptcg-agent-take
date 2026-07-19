@@ -322,12 +322,31 @@ def to_active_handler(
     """TO_ACTIVE (after a Knock Out) / SWITCH: promote the best Bench Pokémon.
 
     Prefer a Pokémon that can fire a damaging attack *right now* (SOT-1682), then
-    the one closest to firing (smallest Energy deficit), then the one hitting the
-    current defender hardest (weakness/resistance-aware), then the cheaper prize
-    gift (don't promote an ex/megaEx as fodder), then higher HP.
+    the better **prize trade** (SOT-1730), then the one closest to firing
+    (smallest Energy deficit), then the one hitting the current defender hardest
+    (weakness/resistance-aware), then the cheaper prize gift, then higher HP.
+
+    The prize trade scores the promotion like the race it starts: Knocking Out
+    the defender right now earns the defender's prize value; being Knocked Out
+    by the opponent's affordable counter-attack next turn concedes the
+    candidate's own prize value. Mirror-loss traces (SOT-1730) show 2-prize ex
+    promoted as fodder — dying without a return KO — is the dominant conceded
+    multi-prize event, so a 1-prize attacker making the same trade now wins the
+    tie instead. A firing candidate whose trade *concedes* 2+ net prizes also
+    loses its can-fire privilege: feeding a cheap body instead stretches the
+    opponent's prize clock by a KO while the engine survives to swing later.
     """
     cards = damage.get_card_registry()
     defender_cd = _opponent_active_card(obs)
+    state = obs.current
+    opp_active = None
+    if state is not None:
+        try:
+            opp = state.players[1 - state.yourIndex]
+            opp_active = opp.active[0] if opp.active else None
+        except (IndexError, TypeError, AttributeError):
+            opp_active = None
+    defender_hp = opp_active.hp if opp_active is not None else None
     scored: list[tuple[int, tuple]] = []
     for i, o in enumerate(select.option):
         p = _referenced_pokemon(o, obs)
@@ -338,8 +357,18 @@ def to_active_handler(
             deficit = 99  # never going to attack: last resort
         can_fire = 1 if deficit <= 0 else 0
         dmg = _best_damage_vs(pc, defender_cd)
+        ko_now = bool(can_fire and defender_hp is not None and dmg >= defender_hp)
+        incoming = _incoming_damage(opp_active, defender_cd, pc)
+        dies_next = p is not None and p.hp is not None and incoming >= p.hp
+        race = (_prize_value(defender_cd) if ko_now else 0) - (
+            _prize_value(pc) if dies_next else 0
+        )
+        # A promotion that concedes 2+ net prizes without a return KO is a
+        # multi-prize gift, not an attacker — rank it with the non-firing
+        # bodies so cheaper fodder soaks the hit first.
+        fire_rank = can_fire if race > -2 else 0
         hp = p.hp if p is not None else 0
-        scored.append((i, (can_fire, -deficit, dmg, -_prize_value(pc), hp)))
+        scored.append((i, (fire_rank, race, -deficit, dmg, -_prize_value(pc), hp)))
     return _top_k(scored, _pick_count(select, want_at_least_one=True))
 
 
