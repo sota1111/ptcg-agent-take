@@ -8,12 +8,24 @@ the length is within ``[minCount, maxCount]`` with no duplicates, and the initia
 selection (``obs.select is None``) returns the 60-card deck.
 """
 
+import os
+from copy import deepcopy
+
 from cg.api import Observation, to_observation_class
 
+from agents.compatibility import CompatibilityAdapter, LegacyDeckStrategy
 from agents.rule_based import RuleBasedAgent
 
-# One agent instance reused across all decisions in a match.
-_AGENT = RuleBasedAgent()
+# Two independent instances let shadow mode compare stateful decisions without
+# changing the authoritative legacy path.  Legacy remains the rollback-safe
+# default when the environment variable is absent.
+_LEGACY_AGENT = RuleBasedAgent()
+_CANDIDATE_AGENT = deepcopy(_LEGACY_AGENT)
+_AGENT = CompatibilityAdapter(
+    legacy=_LEGACY_AGENT,
+    candidate=LegacyDeckStrategy(_CANDIDATE_AGENT),
+    mode=os.environ.get("PTCG_TAKE_MIGRATION_MODE", "legacy").strip().lower(),
+)
 
 
 def agent(obs_dict: dict) -> list[int]:
