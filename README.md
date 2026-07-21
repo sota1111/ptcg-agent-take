@@ -35,6 +35,8 @@ traces/ under eval/  # recorded match traces (gitignored, license)
 
 ## Setup
 ```bash
+git submodule update --init --recursive
+bash scripts/check_core_compatibility.sh
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 bash scripts/setup_engine.sh          # copies cg/ + data/ from the Kaggle download
 venv/bin/python eval/run_match.py     # run one local self-play match
@@ -135,3 +137,34 @@ session; use bounded depth and/or a stronger predictor for clean comparisons.
 ```bash
 bash scripts/build_submission.sh      # -> submission.tar.gz (main.py + deck.csv + cg/)
 ```
+
+## Shared core dependency
+
+This repository consumes [`ptcg-agent-core`](vendor/ptcg-agent-core) as a pinned
+Git submodule, using the same integration boundary as the other PTCG agents.
+Core owns algorithm-independent battle/submission contracts and the shared
+[Kaggle submission guide](vendor/ptcg-agent-core/docs/kaggle-submission.md).
+Take continues to own its deck, rule-based strategy, scoring, and evaluation
+logic; deck and algorithm behavior are deliberately outside the common core.
+
+The pinned commit keeps setup and submission builds reproducible. To update
+core, review its schema versions and release notes, then run:
+
+```bash
+git -C vendor/ptcg-agent-core fetch origin main
+git -C vendor/ptcg-agent-core checkout origin/main
+bash scripts/check_core_compatibility.sh
+venv/bin/python -m unittest discover
+git add vendor/ptcg-agent-core
+```
+
+Commit the gitlink update together with the compatibility results. If the new
+core is incompatible, restore the previous gitlink with
+`git checkout -- vendor/ptcg-agent-core`, run
+`git submodule update --init`, and re-run both checks. Do not use an unreviewed
+moving branch for a submission build.
+
+The submission builder follows the core-owned archive layout, verifies required
+top-level files, and excludes development files, credentials, Git metadata, and
+the core checkout. For authentication, submission, result checks, and
+troubleshooting, follow the shared core guide linked above.
