@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "ptcg-take-runtime-promotion/v1",
+  "issue": "SOT-1869",
+  "implementationCommit": "f354f9c0aca005a8f15dbcb7695ac8ce970d2271",
+  "profile": "take-adaptive-tempo-v1",
+  "deck": {"path": "deck.csv", "sha256": "42068a1803902756badcfd418f6f348b7901365a281d78af0692cbf2589f0799"},
+  "submission": {
+    "path": "submission.tar.gz",
+    "sha256": "23aa551c9bb1a2a3eacb18cd2a783ce0eab296ca03942a2d4752646a5b58f3ec",
+    "protocol": "agent(obs_dict) -> list[int]",
+    "competitionBudgetSeconds": 600,
+    "profileSearchBudgetMs": 250
+  },
+  "evaluation": {
+    "seed": 1869,
+    "seatSwap": true,
+    "gamesPerCard": 100,
+    "baselineRef": "origin/main@35c2d89",
+    "newVsOld": {
+      "wins": 56, "losses": 44, "draws": 0, "unfinished": 0,
+      "winRate": 0.56, "wilson95": [0.4623, 0.6533],
+      "promotionGate": "Wilson upper bound >= 0.5", "passed": true
+    },
+    "hardFloorVsRandom": {
+      "wins": 90, "losses": 10, "draws": 0, "unfinished": 0,
+      "winRate": 0.9, "wilson95": [0.8256, 0.9448],
+      "gate": "Wilson lower bound > 0.5", "passed": true
+    },
+    "safety": {"faults": 0, "unfinished": 0, "illegalActions": 0, "maxDecisionMs": 0.33}
+  },
+  "verdict": "promote"
+}
