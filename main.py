@@ -9,12 +9,22 @@ selection (``obs.select is None``) returns the 60-card deck.
 """
 
 import os
+import sys
 from copy import deepcopy
 
-from cg.api import Observation, to_observation_class
+# Kaggle executes this file with exec() (no __file__), so the submission
+# directory is not necessarily on sys.path. Prefer the bundled cg/ and agents/
+# packages over any unrelated module with the same top-level name.
+_KAGGLE_AGENT_DIR = "/kaggle_simulations/agent"
+_SUBMISSION_DIR = (_KAGGLE_AGENT_DIR if os.path.isdir(_KAGGLE_AGENT_DIR)
+                   else os.path.abspath(os.getcwd()))
+if sys.path[0] != _SUBMISSION_DIR:
+    sys.path.insert(0, _SUBMISSION_DIR)
 
-from agents.compatibility import CompatibilityAdapter, LegacyDeckStrategy
-from agents.rule_based import RuleBasedAgent
+from cg.api import Observation, to_observation_class  # noqa: E402
+
+from agents.compatibility import CompatibilityAdapter, LegacyDeckStrategy  # noqa: E402
+from agents.rule_based import RuleBasedAgent  # noqa: E402
 
 # Two independent instances let shadow mode compare stateful decisions without
 # changing the authoritative legacy path.  Legacy remains the rollback-safe
