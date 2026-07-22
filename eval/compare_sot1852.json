@@ -1,0 +1,136 @@
+{
+  "current": "deck.csv",
+  "decks_dir": "decks/candidates",
+  "games": 100,
+  "policy": "scoring",
+  "z": 1.96,
+  "candidates": [
+    {
+      "deck": "zero_champion",
+      "path": "decks/candidates/zero_champion.csv",
+      "games": 100,
+      "wins": 55,
+      "losses": 45,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 100,
+      "winrate": 0.55,
+      "ci_low": 0.45244427031643447,
+      "ci_high": 0.6438562489359654,
+      "failures": 0,
+      "failures_by_category": {},
+      "failures_by_agent": {
+        "A": 0,
+        "B": 0
+      },
+      "side_balanced": true,
+      "out_dir": "eval/traces/compare_decks_zero_champion_100"
+    },
+    {
+      "deck": "stw_e30",
+      "path": "decks/candidates/stw_e30.csv",
+      "games": 100,
+      "wins": 45,
+      "losses": 55,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 100,
+      "winrate": 0.45,
+      "ci_low": 0.3561437510640346,
+      "ci_high": 0.5475557296835656,
+      "failures": 0,
+      "failures_by_category": {},
+      "failures_by_agent": {
+        "A": 0,
+        "B": 0
+      },
+      "side_balanced": true,
+      "out_dir": "eval/traces/compare_decks_stw_e30_100"
+    },
+    {
+      "deck": "stw_e40",
+      "path": "decks/candidates/stw_e40.csv",
+      "games": 100,
+      "wins": 44,
+      "losses": 56,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 100,
+      "winrate": 0.44,
+      "ci_low": 0.34671865400968327,
+      "ci_high": 0.537720722887437,
+      "failures": 0,
+      "failures_by_category": {},
+      "failures_by_agent": {
+        "A": 0,
+        "B": 0
+      },
+      "side_balanced": true,
+      "out_dir": "eval/traces/compare_decks_stw_e40_100"
+    },
+    {
+      "deck": "prize_race_tr_mewtwo",
+      "path": "decks/candidates/prize_race_tr_mewtwo.csv",
+      "games": 100,
+      "wins": 8,
+      "losses": 92,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 100,
+      "winrate": 0.08,
+      "ci_low": 0.04109296948581092,
+      "ci_high": 0.1499826687940307,
+      "failures": 0,
+      "failures_by_category": {},
+      "failures_by_agent": {
+        "A": 0,
+        "B": 0
+      },
+      "side_balanced": true,
+      "out_dir": "eval/traces/compare_decks_prize_race_tr_mewtwo_100"
+    },
+    {
+      "deck": "single_prize_tr",
+      "path": "decks/candidates/single_prize_tr.csv",
+      "games": 100,
+      "wins": 6,
+      "losses": 94,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 100,
+      "winrate": 0.06,
+      "ci_low": 0.02778574526665662,
+      "ci_high": 0.12476968531222507,
+      "failures": 0,
+      "failures_by_category": {},
+      "failures_by_agent": {
+        "A": 0,
+        "B": 0
+      },
+      "side_balanced": true,
+      "out_dir": "eval/traces/compare_decks_single_prize_tr_100"
+    },
+    {
+      "deck": "prize_race_kyogre",
+      "path": "decks/candidates/prize_race_kyogre.csv",
+      "games": 100,
+      "wins": 4,
+      "losses": 96,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 100,
+      "winrate": 0.04,
+      "ci_low": 0.01566305055184801,
+      "ci_high": 0.09837217232607375,
+      "failures": 0,
+      "failures_by_category": {},
+      "failures_by_agent": {
+        "A": 0,
+        "B": 0
+      },
+      "side_balanced": true,
+      "out_dir": "eval/traces/compare_decks_prize_race_kyogre_100"
+    }
+  ],
+  "passed": true
+}
