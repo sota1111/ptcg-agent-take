@@ -91,7 +91,7 @@ def _base_record(issue: Optional[str], source: str) -> dict:
 def build_record(stats: dict, *, issue: Optional[str],
                  source: str = "kpi-measure", baseline_ref: str = BASELINE_REF,
                  baseline_sha: Optional[str] = None,
-                 deck_pool: str = "decks/initial/*.csv",
+                 deck_pool: str = "decks/rotation_baseline/*.csv",
                  n_decks: Optional[int] = None, seed=None,
                  games_per_deck: Optional[int] = None) -> dict:
     """KPI record from the flat counters accumulated by :func:`run_measure`.
@@ -169,7 +169,7 @@ def record_from_rotation(report: dict, issue: Optional[str] = None) -> dict:
     rec.update({
         "baseline_ref": report.get("old_ref"),
         "baseline_sha": None,
-        "deck_pool": "decks/initial/*.csv",
+        "deck_pool": "decks/rotation_baseline/*.csv",
         "n_decks": len(report.get("decks") or []) or None,
         "n_matches": report.get("total_games"),
         "games_per_deck": report.get("games_per_deck"),
@@ -363,7 +363,7 @@ def main(argv=None) -> int:
     p.add_argument("--measure", action="store_true",
                    help="play the 25-deck mirror arena vs the pinned baseline")
     p.add_argument("--games-per-deck", type=int, default=2)
-    p.add_argument("--decks-glob", default="decks/initial/*.csv")
+    p.add_argument("--decks-glob", default="decks/rotation_baseline/*.csv")
     p.add_argument("--baseline-ref", default=BASELINE_REF)
     p.add_argument("--seed", type=int, default=1709)
     p.add_argument("--workers", type=int, default=None)
