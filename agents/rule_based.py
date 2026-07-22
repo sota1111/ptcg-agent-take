@@ -35,6 +35,7 @@ from cg.api import (
 from agents import damage
 from agents.archetype import BandAdjust, band_adjustments, deck_profile
 from agents.base import Agent, is_valid_selection, legal_random_sample, read_deck_csv
+from agents.profile import RuntimeProfile, load_promoted_profile
 
 # A context/type handler: given the agent, the current selection, and the full
 # observation, return the chosen option indices, or ``None`` to defer to the
@@ -1001,7 +1002,12 @@ ADAPTIVE_SEARCH_DECKS = frozenset({
 })
 
 
-def adaptive_search_depth(obs: Observation, branching: int, enabled: bool) -> int:
+def adaptive_search_depth(
+    obs: Observation,
+    branching: int,
+    enabled: bool,
+    profile: Optional[RuntimeProfile] = None,
+) -> int:
     """Return a bounded tactical horizon from width and remaining game length.
 
     Wide positions stay at depth one to keep decision time predictable.  A
@@ -1010,7 +1016,9 @@ def adaptive_search_depth(obs: Observation, branching: int, enabled: bool) -> in
     This is a deterministic selective-extension policy rather than an engine
     rollout, so hidden cards are never guessed and legality remains unchanged.
     """
-    if not enabled or branching > 10:
+    branch_limit = profile.max_branching_for_extension if profile else 10
+    max_depth = profile.max_depth if profile else 3
+    if not enabled or branching > branch_limit or max_depth <= 1:
         return 1
     state = obs.current
     if state is None:
@@ -1020,7 +1028,8 @@ def adaptive_search_depth(obs: Observation, branching: int, enabled: bool) -> in
         turns_left = min(me.deckCount, max(1, len(me.prize)))
     except (IndexError, TypeError, AttributeError):
         return 1
-    return 3 if branching <= 5 and turns_left >= 3 else 2
+    wanted = 3 if branching <= 5 and turns_left >= 3 else 2
+    return min(max_depth, wanted)
 
 
 def _horizon_adjustment(option_type, depth: int) -> float:
@@ -1417,7 +1426,8 @@ def scoring_main_context_handler(
              or _ability_deck_parity_ok(obs))
     )
     search_depth = adaptive_search_depth(
-        obs, len(select.option), getattr(agent, "_adaptive_search", False)
+        obs, len(select.option), getattr(agent, "_adaptive_search", False),
+        getattr(agent, "runtime_profile", None),
     )
     best_i: Optional[int] = None
     best_s: Optional[float] = None
@@ -1432,7 +1442,9 @@ def scoring_main_context_handler(
             continue
         # Keep terminal KO ordering absolute; all other choices receive the
         # bounded continuation value of the selected horizon.
-        if s < S_LETHAL:
+        # Never let continuation value resurrect an explicitly guarded action
+        # (deck-out draw, doomed attachment, idle retreat, discard).
+        if S_END < s < S_LETHAL:
             s += _horizon_adjustment(o.type, search_depth)
         if best_s is None or s > best_s:  # strict '>' keeps the first (lowest) index on ties
             best_s = s
@@ -1557,6 +1569,7 @@ class RuleBasedAgent(Agent):
         seed: Optional[int] = None,
         deck_path: str = "deck.csv",
         policy: str = "scoring",
+        profile_path: Optional[str] = None,
     ) -> None:
         self.rng = random.Random(seed)
         self.deck_path = deck_path
@@ -1565,6 +1578,10 @@ class RuleBasedAgent(Agent):
                 f"unknown policy {policy!r}; expected one of {sorted(self.MAIN_POLICIES)}"
             )
         self.policy = policy
+        # SOT-1869 promotion: the evaluated balanced adaptive-tempo profile is
+        # now the production default. Loading is explicit and validated so the
+        # submission cannot silently run with partial or unsafe tuning.
+        self.runtime_profile = load_promoted_profile(profile_path)
         # Per-instance MAIN handler so the policy can vary without mutating the
         # shared class table; every other context still reads ``CONTEXT_HANDLERS``
         # live, so later registrations there keep taking effect.
@@ -1580,7 +1597,10 @@ class RuleBasedAgent(Agent):
         # deck-out-prone decks pause abilities on deck-parity deficit.
         stem = os.path.splitext(os.path.basename(deck_path))[0]
         self._ability_parity_guarded: bool = stem in ABILITY_PARITY_DECKS
-        self._adaptive_search: bool = stem in ADAPTIVE_SEARCH_DECKS
+        self._adaptive_search: bool = (
+            self.runtime_profile.strategy == "matchup-responsive-balanced-tempo"
+            or stem in ADAPTIVE_SEARCH_DECKS
+        )
         self.bands = BandAdjust()
         try:
             deck = read_deck_csv(deck_path)

@@ -16,8 +16,11 @@ from copy import deepcopy
 # directory is not necessarily on sys.path. Prefer the bundled cg/ and agents/
 # packages over any unrelated module with the same top-level name.
 _KAGGLE_AGENT_DIR = "/kaggle_simulations/agent"
-_SUBMISSION_DIR = (_KAGGLE_AGENT_DIR if os.path.isdir(_KAGGLE_AGENT_DIR)
-                   else os.path.abspath(os.getcwd()))
+_SUBMISSION_DIR = (
+    _KAGGLE_AGENT_DIR
+    if "__file__" not in globals() and os.path.isdir(_KAGGLE_AGENT_DIR)
+    else os.path.dirname(os.path.abspath(__file__))
+)
 if sys.path[0] != _SUBMISSION_DIR:
     sys.path.insert(0, _SUBMISSION_DIR)
 
