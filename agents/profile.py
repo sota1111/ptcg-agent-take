@@ -19,6 +19,9 @@ class RuntimeProfile:
     max_depth: int
     max_branching_for_extension: int
     illegal_action_fallback: str
+    competition_budget_seconds: int
+    experiment_budget_seconds: int
+    checkpoint_every_games: int
 
 
 def load_promoted_profile(path: str | None = None) -> RuntimeProfile:
@@ -34,10 +37,19 @@ def load_promoted_profile(path: str | None = None) -> RuntimeProfile:
     depth = int(raw["maxDepth"])
     branching = int(raw["maxBranchingForExtension"])
     budget = int(raw["searchBudgetMs"])
+    competition_budget = int(raw["competitionBudgetSeconds"])
+    experiment_budget = int(raw["experimentBudgetSeconds"])
+    checkpoint_every = int(raw["checkpointEveryGames"])
     if not (0.0 <= floor <= ceiling <= 1.0 and 0.0 <= weight <= 1.0):
         raise ValueError("profile weights and risk bounds must be normalized")
     if not (1 <= depth <= 3 and 1 <= branching <= 32 and 1 <= budget <= 600_000):
         raise ValueError("profile search limits are outside runtime-safe bounds")
+    if competition_budget != 600:
+        raise ValueError("competition budget must be exactly 600 seconds")
+    if not (1 <= experiment_budget <= 8 * 60 * 60):
+        raise ValueError("experiment budget exceeds the 8-hour limit")
+    if checkpoint_every < 1:
+        raise ValueError("checkpoint cadence must be positive")
     fallback = str(raw["illegalActionFallback"])
     if fallback != "highest-value-legal":
         raise ValueError("unsupported illegal-action fallback")
@@ -47,4 +59,7 @@ def load_promoted_profile(path: str | None = None) -> RuntimeProfile:
         risk_floor=floor, risk_ceiling=ceiling, search_budget_ms=budget,
         max_depth=depth, max_branching_for_extension=branching,
         illegal_action_fallback=fallback,
+        competition_budget_seconds=competition_budget,
+        experiment_budget_seconds=experiment_budget,
+        checkpoint_every_games=checkpoint_every,
     )

@@ -57,7 +57,19 @@ def _write_deck(deck: list) -> None:
 
 def main() -> int:
     sys.path.insert(0, os.getcwd())  # repo/sandbox root: resolve `main` / `cg`
-    import main as main_mod  # the project's Kaggle submission entry point
+    src_root = os.path.join(os.getcwd(), "src")
+    if os.path.isdir(src_root):
+        sys.path.insert(0, src_root)  # support standard src-layout submissions
+    # Several real submissions prefer /kaggle_simulations/agent whenever that
+    # directory happens to exist.  A local cross-play must instead load the
+    # contestant sandbox.  Hide only that sentinel during import; restore the
+    # process-wide function immediately afterwards.
+    real_isdir = os.path.isdir
+    os.path.isdir = lambda path: False if path == "/kaggle_simulations/agent" else real_isdir(path)
+    try:
+        import main as main_mod  # the project's Kaggle submission entry point
+    finally:
+        os.path.isdir = real_isdir
     assert hasattr(main_mod, "agent")
 
     sys.stderr.write("READY\n")

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os.path
 import random
+import time
 from typing import Callable, Optional
 
 from cg.api import (
@@ -1582,6 +1583,7 @@ class RuleBasedAgent(Agent):
         # now the production default. Loading is explicit and validated so the
         # submission cannot silently run with partial or unsafe tuning.
         self.runtime_profile = load_promoted_profile(profile_path)
+        self._match_think_seconds = 0.0
         # Per-instance MAIN handler so the policy can vary without mutating the
         # shared class table; every other context still reads ``CONTEXT_HANDLERS``
         # live, so later registrations there keep taking effect.
@@ -1617,7 +1619,15 @@ class RuleBasedAgent(Agent):
         handler or while parsing an unexpected observation — degrades to a legal
         random selection rather than crashing the match.
         """
+        started = time.perf_counter()
         try:
+            if obs.select is None:
+                # The submission process can be reused across matches.  The
+                # 600-second allowance is per match, so the deck-selection
+                # observation is the unambiguous clock reset boundary.
+                self._match_think_seconds = 0.0
+            if self._match_think_seconds >= self.runtime_profile.competition_budget_seconds:
+                return self._safe_fallback(obs)
             if obs.select is None:
                 # Initial selection: the engine expects the 60-card deck.
                 return read_deck_csv(self.deck_path)
@@ -1629,6 +1639,8 @@ class RuleBasedAgent(Agent):
             return legal_random_sample(obs.select, self.rng)
         except Exception:
             return self._safe_fallback(obs)
+        finally:
+            self._match_think_seconds += time.perf_counter() - started
 
     def _dispatch(
         self, select: SelectData, obs: Observation

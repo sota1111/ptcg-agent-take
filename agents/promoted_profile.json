@@ -10,6 +10,9 @@
   "maxDepth": 3,
   "maxBranchingForExtension": 10,
   "illegalActionFallback": "highest-value-legal",
+  "competitionBudgetSeconds": 600,
+  "experimentBudgetSeconds": 28800,
+  "checkpointEveryGames": 2,
   "source": {
     "issue": "SOT-1849",
     "evaluation": "artifacts/ptcg-take-adaptive/sot-1849/report.json"
