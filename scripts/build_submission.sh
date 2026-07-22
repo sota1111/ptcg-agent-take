@@ -22,6 +22,7 @@ trap 'rm -f -- "$listing"' EXIT
 tar -tzf "$ARCHIVE" > "$listing"
 grep -Fx 'main.py' "$listing" >/dev/null
 grep -Fx 'deck.csv' "$listing" >/dev/null
+grep -Fx 'agents/promoted_profile.json' "$listing" >/dev/null
 if grep -E '(^|/)(\.env($|\.)|\.git/|vendor/|tests/|eval/|venv/|access_token|kaggle\.json|__pycache__/|.*\.pyc$)' "$listing"; then
   echo "submission contains a forbidden path" >&2
   exit 1
