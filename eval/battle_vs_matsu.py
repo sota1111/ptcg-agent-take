@@ -245,7 +245,9 @@ class Contestant:
             text=True,
         )
         line = self.proc.stderr.readline()
-        if line.strip() != "READY":
+        # Current agent servers include the loaded deck after the protocol
+        # marker (``READY deck=...``); older servers emitted bare ``READY``.
+        if not line.strip().startswith("READY"):
             err = self.proc.stderr.read()
             raise RuntimeError(f"{self.label} agent failed to start: {line}{err}")
         self._planner_deck = None
