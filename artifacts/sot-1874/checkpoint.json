@@ -1,0 +1,1292 @@
+{
+  "schemaVersion": "ptcg-take-runtime-league/v1",
+  "issue": "SOT-1874",
+  "profile": "take-adaptive-tempo-v1",
+  "seed": 1874,
+  "gamesPerOpponent": 2,
+  "opponents": [
+    "sol",
+    "debate",
+    "fable",
+    "zero"
+  ],
+  "matches": [
+    {
+      "opponent": "sol",
+      "index": 0,
+      "takeSeat": 0,
+      "take_seat": 0,
+      "take_won": true,
+      "winner": 0,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 0.242
+        },
+        {
+          "seat": 0,
+          "value": 0.299
+        },
+        {
+          "seat": 1,
+          "value": 26.901
+        },
+        {
+          "seat": 0,
+          "value": 0.238
+        },
+        {
+          "seat": 0,
+          "value": 0.189
+        },
+        {
+          "seat": 0,
+          "value": 0.157
+        },
+        {
+          "seat": 1,
+          "value": 640.464
+        },
+        {
+          "seat": 1,
+          "value": 640.346
+        },
+        {
+          "seat": 1,
+          "value": 640.408
+        },
+        {
+          "seat": 1,
+          "value": 0.163
+        },
+        {
+          "seat": 1,
+          "value": 640.343
+        },
+        {
+          "seat": 1,
+          "value": 640.325
+        },
+        {
+          "seat": 0,
+          "value": 0.424
+        },
+        {
+          "seat": 0,
+          "value": 0.307
+        },
+        {
+          "seat": 0,
+          "value": 0.264
+        },
+        {
+          "seat": 0,
+          "value": 0.238
+        },
+        {
+          "seat": 0,
+          "value": 0.177
+        },
+        {
+          "seat": 0,
+          "value": 0.274
+        }
+      ]
+    },
+    {
+      "opponent": "sol",
+      "index": 1,
+      "takeSeat": 1,
+      "take_seat": 1,
+      "take_won": false,
+      "winner": 0,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 640.285
+        },
+        {
+          "seat": 0,
+          "value": 0.234
+        },
+        {
+          "seat": 1,
+          "value": 0.299
+        },
+        {
+          "seat": 0,
+          "value": 640.327
+        },
+        {
+          "seat": 0,
+          "value": 640.341
+        },
+        {
+          "seat": 0,
+          "value": 640.382
+        },
+        {
+          "seat": 0,
+          "value": 0.185
+        },
+        {
+          "seat": 1,
+          "value": 0.216
+        },
+        {
+          "seat": 1,
+          "value": 0.162
+        },
+        {
+          "seat": 1,
+          "value": 0.172
+        },
+        {
+          "seat": 1,
+          "value": 0.171
+        },
+        {
+          "seat": 0,
+          "value": 640.337
+        },
+        {
+          "seat": 0,
+          "value": 640.382
+        },
+        {
+          "seat": 0,
+          "value": 640.374
+        },
+        {
+          "seat": 0,
+          "value": 565.989
+        },
+        {
+          "seat": 0,
+          "value": 532.182
+        },
+        {
+          "seat": 0,
+          "value": 640.342
+        },
+        {
+          "seat": 0,
+          "value": 5.385
+        }
+      ]
+    },
+    {
+      "opponent": "debate",
+      "index": 0,
+      "takeSeat": 0,
+      "take_seat": 0,
+      "take_won": true,
+      "winner": 0,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 0.131
+        },
+        {
+          "seat": 0,
+          "value": 0.143
+        },
+        {
+          "seat": 1,
+          "value": 29.522
+        },
+        {
+          "seat": 0,
+          "value": 0.231
+        },
+        {
+          "seat": 0,
+          "value": 0.121
+        },
+        {
+          "seat": 0,
+          "value": 0.145
+        },
+        {
+          "seat": 0,
+          "value": 0.099
+        },
+        {
+          "seat": 0,
+          "value": 0.074
+        },
+        {
+          "seat": 1,
+          "value": 640.368
+        },
+        {
+          "seat": 1,
+          "value": 640.341
+        },
+        {
+          "seat": 1,
+          "value": 640.322
+        },
+        {
+          "seat": 0,
+          "value": 0.405
+        },
+        {
+          "seat": 0,
+          "value": 0.188
+        },
+        {
+          "seat": 0,
+          "value": 0.285
+        },
+        {
+          "seat": 0,
+          "value": 0.216
+        },
+        {
+          "seat": 0,
+          "value": 0.203
+        },
+        {
+          "seat": 0,
+          "value": 0.149
+        },
+        {
+          "seat": 0,
+          "value": 0.19
+        }
+      ]
+    },
+    {
+      "opponent": "debate",
+      "index": 1,
+      "takeSeat": 1,
+      "take_seat": 1,
+      "take_won": false,
+      "winner": 0,
+      "fault": null,
+      "reason": 1,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 640.29
+        },
+        {
+          "seat": 1,
+          "value": 0.241
+        },
+        {
+          "seat": 0,
+          "value": 640.324
+        },
+        {
+          "seat": 1,
+          "value": 0.386
+        },
+        {
+          "seat": 0,
+          "value": 640.32
+        },
+        {
+          "seat": 1,
+          "value": 0.3
+        },
+        {
+          "seat": 0,
+          "value": 640.356
+        },
+        {
+          "seat": 0,
+          "value": 0.233
+        },
+        {
+          "seat": 1,
+          "value": 0.357
+        },
+        {
+          "seat": 1,
+          "value": 0.3
+        },
+        {
+          "seat": 1,
+          "value": 0.314
+        },
+        {
+          "seat": 1,
+          "value": 0.233
+        },
+        {
+          "seat": 1,
+          "value": 0.218
+        },
+        {
+          "seat": 1,
+          "value": 0.169
+        },
+        {
+          "seat": 0,
+          "value": 640.482
+        },
+        {
+          "seat": 0,
+          "value": 640.376
+        },
+        {
+          "seat": 0,
+          "value": 640.445
+        },
+        {
+          "seat": 0,
+          "value": 640.423
+        },
+        {
+          "seat": 0,
+          "value": 640.355
+        },
+        {
+          "seat": 0,
+          "value": 640.38
+        },
+        {
+          "seat": 0,
+          "value": 640.328
+        },
+        {
+          "seat": 0,
+          "value": 640.468
+        },
+        {
+          "seat": 1,
+          "value": 0.424
+        },
+        {
+          "seat": 1,
+          "value": 0.335
+        },
+        {
+          "seat": 1,
+          "value": 0.275
+        },
+        {
+          "seat": 1,
+          "value": 0.258
+        },
+        {
+          "seat": 1,
+          "value": 0.265
+        },
+        {
+          "seat": 1,
+          "value": 0.293
+        },
+        {
+          "seat": 1,
+          "value": 0.265
+        },
+        {
+          "seat": 1,
+          "value": 0.197
+        },
+        {
+          "seat": 0,
+          "value": 640.386
+        },
+        {
+          "seat": 0,
+          "value": 640.46
+        },
+        {
+          "seat": 0,
+          "value": 640.293
+        },
+        {
+          "seat": 0,
+          "value": 640.373
+        },
+        {
+          "seat": 0,
+          "value": 640.423
+        },
+        {
+          "seat": 1,
+          "value": 0.378
+        },
+        {
+          "seat": 1,
+          "value": 0.281
+        },
+        {
+          "seat": 1,
+          "value": 0.348
+        },
+        {
+          "seat": 1,
+          "value": 0.248
+        },
+        {
+          "seat": 1,
+          "value": 0.23
+        },
+        {
+          "seat": 0,
+          "value": 640.446
+        },
+        {
+          "seat": 0,
+          "value": 640.493
+        },
+        {
+          "seat": 0,
+          "value": 640.414
+        },
+        {
+          "seat": 0,
+          "value": 640.497
+        },
+        {
+          "seat": 0,
+          "value": 640.403
+        },
+        {
+          "seat": 0,
+          "value": 640.395
+        },
+        {
+          "seat": 1,
+          "value": 0.368
+        },
+        {
+          "seat": 1,
+          "value": 0.229
+        },
+        {
+          "seat": 1,
+          "value": 0.26
+        },
+        {
+          "seat": 1,
+          "value": 0.23
+        },
+        {
+          "seat": 1,
+          "value": 0.204
+        },
+        {
+          "seat": 0,
+          "value": 640.357
+        },
+        {
+          "seat": 0,
+          "value": 640.517
+        },
+        {
+          "seat": 0,
+          "value": 640.533
+        },
+        {
+          "seat": 1,
+          "value": 0.333
+        },
+        {
+          "seat": 1,
+          "value": 0.225
+        },
+        {
+          "seat": 1,
+          "value": 0.198
+        },
+        {
+          "seat": 1,
+          "value": 0.208
+        },
+        {
+          "seat": 1,
+          "value": 0.237
+        },
+        {
+          "seat": 1,
+          "value": 0.333
+        },
+        {
+          "seat": 0,
+          "value": 640.511
+        },
+        {
+          "seat": 0,
+          "value": 640.548
+        },
+        {
+          "seat": 0,
+          "value": 0.313
+        },
+        {
+          "seat": 1,
+          "value": 0.444
+        },
+        {
+          "seat": 1,
+          "value": 0.365
+        },
+        {
+          "seat": 1,
+          "value": 0.329
+        },
+        {
+          "seat": 1,
+          "value": 0.31
+        },
+        {
+          "seat": 0,
+          "value": 621.813
+        },
+        {
+          "seat": 0,
+          "value": 294.497
+        },
+        {
+          "seat": 0,
+          "value": 0.28
+        }
+      ]
+    },
+    {
+      "opponent": "fable",
+      "index": 0,
+      "takeSeat": 0,
+      "take_seat": 0,
+      "take_won": false,
+      "winner": 1,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 0.212
+        },
+        {
+          "seat": 0,
+          "value": 0.209
+        },
+        {
+          "seat": 1,
+          "value": 26.337
+        },
+        {
+          "seat": 0,
+          "value": 0.226
+        },
+        {
+          "seat": 0,
+          "value": 0.22
+        },
+        {
+          "seat": 0,
+          "value": 0.22
+        },
+        {
+          "seat": 0,
+          "value": 0.211
+        },
+        {
+          "seat": 1,
+          "value": 640.456
+        },
+        {
+          "seat": 1,
+          "value": 640.365
+        },
+        {
+          "seat": 1,
+          "value": 640.412
+        },
+        {
+          "seat": 1,
+          "value": 640.344
+        },
+        {
+          "seat": 1,
+          "value": 640.299
+        },
+        {
+          "seat": 0,
+          "value": 0.338
+        },
+        {
+          "seat": 0,
+          "value": 0.318
+        },
+        {
+          "seat": 0,
+          "value": 0.27
+        },
+        {
+          "seat": 0,
+          "value": 0.296
+        },
+        {
+          "seat": 0,
+          "value": 0.283
+        },
+        {
+          "seat": 0,
+          "value": 0.246
+        },
+        {
+          "seat": 0,
+          "value": 0.187
+        },
+        {
+          "seat": 1,
+          "value": 640.511
+        },
+        {
+          "seat": 1,
+          "value": 640.499
+        },
+        {
+          "seat": 1,
+          "value": 640.357
+        },
+        {
+          "seat": 1,
+          "value": 640.466
+        },
+        {
+          "seat": 1,
+          "value": 640.393
+        },
+        {
+          "seat": 1,
+          "value": 640.399
+        },
+        {
+          "seat": 1,
+          "value": 640.437
+        },
+        {
+          "seat": 1,
+          "value": 640.352
+        },
+        {
+          "seat": 1,
+          "value": 640.266
+        },
+        {
+          "seat": 0,
+          "value": 0.327
+        },
+        {
+          "seat": 0,
+          "value": 0.151
+        },
+        {
+          "seat": 0,
+          "value": 0.11
+        },
+        {
+          "seat": 1,
+          "value": 640.411
+        },
+        {
+          "seat": 1,
+          "value": 640.443
+        },
+        {
+          "seat": 1,
+          "value": 624.962
+        },
+        {
+          "seat": 1,
+          "value": 429.333
+        },
+        {
+          "seat": 1,
+          "value": 640.463
+        },
+        {
+          "seat": 1,
+          "value": 5.199
+        }
+      ]
+    },
+    {
+      "opponent": "fable",
+      "index": 1,
+      "takeSeat": 1,
+      "take_seat": 1,
+      "take_won": false,
+      "winner": 0,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 640.276
+        },
+        {
+          "seat": 0,
+          "value": 0.224
+        },
+        {
+          "seat": 1,
+          "value": 0.403
+        },
+        {
+          "seat": 0,
+          "value": 640.303
+        },
+        {
+          "seat": 1,
+          "value": 0.295
+        },
+        {
+          "seat": 0,
+          "value": 640.438
+        },
+        {
+          "seat": 0,
+          "value": 640.356
+        },
+        {
+          "seat": 0,
+          "value": 640.296
+        },
+        {
+          "seat": 0,
+          "value": 0.205
+        },
+        {
+          "seat": 1,
+          "value": 0.321
+        },
+        {
+          "seat": 1,
+          "value": 0.227
+        },
+        {
+          "seat": 1,
+          "value": 0.184
+        },
+        {
+          "seat": 1,
+          "value": 0.164
+        },
+        {
+          "seat": 0,
+          "value": 640.32
+        },
+        {
+          "seat": 0,
+          "value": 640.338
+        },
+        {
+          "seat": 0,
+          "value": 640.301
+        },
+        {
+          "seat": 0,
+          "value": 640.314
+        },
+        {
+          "seat": 0,
+          "value": 640.4
+        },
+        {
+          "seat": 0,
+          "value": 640.394
+        },
+        {
+          "seat": 1,
+          "value": 0.334
+        },
+        {
+          "seat": 1,
+          "value": 0.204
+        },
+        {
+          "seat": 1,
+          "value": 0.213
+        },
+        {
+          "seat": 1,
+          "value": 0.193
+        },
+        {
+          "seat": 1,
+          "value": 0.168
+        },
+        {
+          "seat": 0,
+          "value": 640.429
+        },
+        {
+          "seat": 0,
+          "value": 640.346
+        },
+        {
+          "seat": 0,
+          "value": 640.53
+        },
+        {
+          "seat": 0,
+          "value": 640.406
+        },
+        {
+          "seat": 1,
+          "value": 0.419
+        },
+        {
+          "seat": 1,
+          "value": 0.269
+        },
+        {
+          "seat": 1,
+          "value": 0.272
+        },
+        {
+          "seat": 0,
+          "value": 589.855
+        },
+        {
+          "seat": 0,
+          "value": 397.474
+        },
+        {
+          "seat": 0,
+          "value": 640.371
+        },
+        {
+          "seat": 0,
+          "value": 3.468
+        }
+      ]
+    },
+    {
+      "opponent": "zero",
+      "index": 0,
+      "takeSeat": 0,
+      "take_seat": 0,
+      "take_won": true,
+      "winner": 0,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 0.164
+        },
+        {
+          "seat": 0,
+          "value": 0.178
+        },
+        {
+          "seat": 1,
+          "value": 0.162
+        },
+        {
+          "seat": 0,
+          "value": 0.295
+        },
+        {
+          "seat": 0,
+          "value": 0.165
+        },
+        {
+          "seat": 0,
+          "value": 0.222
+        },
+        {
+          "seat": 0,
+          "value": 0.148
+        },
+        {
+          "seat": 0,
+          "value": 0.119
+        },
+        {
+          "seat": 1,
+          "value": 0.116
+        },
+        {
+          "seat": 1,
+          "value": 0.113
+        },
+        {
+          "seat": 1,
+          "value": 0.07
+        },
+        {
+          "seat": 1,
+          "value": 0.068
+        },
+        {
+          "seat": 1,
+          "value": 0.107
+        },
+        {
+          "seat": 1,
+          "value": 0.064
+        },
+        {
+          "seat": 1,
+          "value": 0.115
+        },
+        {
+          "seat": 1,
+          "value": 0.061
+        },
+        {
+          "seat": 0,
+          "value": 0.242
+        },
+        {
+          "seat": 0,
+          "value": 0.239
+        },
+        {
+          "seat": 0,
+          "value": 0.239
+        },
+        {
+          "seat": 0,
+          "value": 0.157
+        },
+        {
+          "seat": 0,
+          "value": 0.135
+        },
+        {
+          "seat": 1,
+          "value": 0.121
+        },
+        {
+          "seat": 1,
+          "value": 0.097
+        },
+        {
+          "seat": 1,
+          "value": 0.072
+        },
+        {
+          "seat": 1,
+          "value": 0.068
+        },
+        {
+          "seat": 0,
+          "value": 0.282
+        },
+        {
+          "seat": 0,
+          "value": 0.189
+        },
+        {
+          "seat": 0,
+          "value": 0.276
+        },
+        {
+          "seat": 0,
+          "value": 0.168
+        },
+        {
+          "seat": 0,
+          "value": 0.178
+        },
+        {
+          "seat": 0,
+          "value": 0.159
+        },
+        {
+          "seat": 1,
+          "value": 0.131
+        },
+        {
+          "seat": 1,
+          "value": 0.102
+        },
+        {
+          "seat": 1,
+          "value": 0.093
+        },
+        {
+          "seat": 1,
+          "value": 0.078
+        },
+        {
+          "seat": 1,
+          "value": 0.076
+        },
+        {
+          "seat": 0,
+          "value": 0.354
+        },
+        {
+          "seat": 0,
+          "value": 0.227
+        },
+        {
+          "seat": 0,
+          "value": 0.233
+        },
+        {
+          "seat": 0,
+          "value": 0.189
+        },
+        {
+          "seat": 0,
+          "value": 0.246
+        },
+        {
+          "seat": 0,
+          "value": 0.189
+        },
+        {
+          "seat": 0,
+          "value": 0.191
+        },
+        {
+          "seat": 0,
+          "value": 0.175
+        },
+        {
+          "seat": 0,
+          "value": 0.217
+        },
+        {
+          "seat": 1,
+          "value": 0.143
+        },
+        {
+          "seat": 1,
+          "value": 0.093
+        },
+        {
+          "seat": 1,
+          "value": 0.084
+        },
+        {
+          "seat": 1,
+          "value": 0.117
+        },
+        {
+          "seat": 1,
+          "value": 0.08
+        },
+        {
+          "seat": 0,
+          "value": 0.29
+        },
+        {
+          "seat": 0,
+          "value": 0.244
+        },
+        {
+          "seat": 0,
+          "value": 0.244
+        },
+        {
+          "seat": 0,
+          "value": 0.209
+        },
+        {
+          "seat": 0,
+          "value": 0.265
+        },
+        {
+          "seat": 0,
+          "value": 0.198
+        },
+        {
+          "seat": 0,
+          "value": 0.204
+        },
+        {
+          "seat": 0,
+          "value": 0.188
+        },
+        {
+          "seat": 0,
+          "value": 0.204
+        }
+      ]
+    },
+    {
+      "opponent": "zero",
+      "index": 1,
+      "takeSeat": 1,
+      "take_seat": 1,
+      "take_won": false,
+      "winner": 0,
+      "fault": null,
+      "reason": 3,
+      "think_ms": [
+        {
+          "seat": 0,
+          "value": 0.074
+        },
+        {
+          "seat": 1,
+          "value": 0.171
+        },
+        {
+          "seat": 0,
+          "value": 0.104
+        },
+        {
+          "seat": 1,
+          "value": 0.218
+        },
+        {
+          "seat": 0,
+          "value": 0.083
+        },
+        {
+          "seat": 0,
+          "value": 0.103
+        },
+        {
+          "seat": 0,
+          "value": 0.064
+        },
+        {
+          "seat": 0,
+          "value": 0.055
+        },
+        {
+          "seat": 1,
+          "value": 0.19
+        },
+        {
+          "seat": 1,
+          "value": 0.239
+        },
+        {
+          "seat": 1,
+          "value": 0.162
+        },
+        {
+          "seat": 1,
+          "value": 0.226
+        },
+        {
+          "seat": 1,
+          "value": 0.154
+        },
+        {
+          "seat": 1,
+          "value": 0.227
+        },
+        {
+          "seat": 1,
+          "value": 0.182
+        },
+        {
+          "seat": 1,
+          "value": 0.196
+        },
+        {
+          "seat": 1,
+          "value": 0.135
+        },
+        {
+          "seat": 0,
+          "value": 0.128
+        },
+        {
+          "seat": 0,
+          "value": 0.083
+        },
+        {
+          "seat": 0,
+          "value": 0.071
+        },
+        {
+          "seat": 0,
+          "value": 0.11
+        },
+        {
+          "seat": 0,
+          "value": 0.068
+        },
+        {
+          "seat": 0,
+          "value": 0.091
+        },
+        {
+          "seat": 1,
+          "value": 0.276
+        },
+        {
+          "seat": 1,
+          "value": 0.263
+        },
+        {
+          "seat": 1,
+          "value": 0.268
+        },
+        {
+          "seat": 1,
+          "value": 0.214
+        },
+        {
+          "seat": 1,
+          "value": 0.197
+        },
+        {
+          "seat": 1,
+          "value": 0.158
+        },
+        {
+          "seat": 0,
+          "value": 0.122
+        },
+        {
+          "seat": 0,
+          "value": 0.121
+        },
+        {
+          "seat": 0,
+          "value": 0.11
+        },
+        {
+          "seat": 1,
+          "value": 0.266
+        },
+        {
+          "seat": 1,
+          "value": 0.204
+        },
+        {
+          "seat": 1,
+          "value": 0.172
+        },
+        {
+          "seat": 0,
+          "value": 0.147
+        },
+        {
+          "seat": 0,
+          "value": 0.093
+        },
+        {
+          "seat": 0,
+          "value": 0.122
+        },
+        {
+          "seat": 0,
+          "value": 0.085
+        },
+        {
+          "seat": 0,
+          "value": 0.105
+        }
+      ]
+    }
+  ],
+  "status": "complete"
+}

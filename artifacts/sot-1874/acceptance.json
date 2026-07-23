@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "ptcg-take-runtime-acceptance/v1",
+  "issue": "SOT-1874",
+  "profile": "take-adaptive-tempo-v1",
+  "implementation": true,
+  "adaptiveCharacteristics": {
+    "adaptationWeight": 0.32,
+    "riskFloor": 0.35,
+    "riskCeiling": 0.65,
+    "maxDepth": 3,
+    "maxBranchingForExtension": 10,
+    "maintained": true
+  },
+  "oldRuntimeAB": {
+    "games": 1600,
+    "wins": 816,
+    "losses": 784,
+    "winRate": 0.51,
+    "wilson95": [0.4855, 0.5344],
+    "requiredLowerBoundExclusive": 0.5,
+    "passed": false
+  },
+  "runtimeLeague": {
+    "opponents": ["sol", "debate", "fable", "zero"],
+    "gamesPerOpponent": 20,
+    "fixedSeed": 1874,
+    "seatBalanced": true,
+    "currentWins": 35,
+    "currentLosses": 45,
+    "currentAverage": 0.4375,
+    "historicalRevision": "35c2d89",
+    "historicalWins": 34,
+    "historicalLosses": 46,
+    "historicalAverage": 0.425,
+    "improved": true,
+    "improvementPercentagePoints": 1.25
+  },
+  "safety": {
+    "faults": 0,
+    "unfinished": 0,
+    "illegalActions": 0,
+    "maxDecisionMs": 0.56,
+    "competitionBudgetSeconds": 600,
+    "experimentBudgetSeconds": 28800
+  },
+  "submissionPackageVerified": true,
+  "acceptance": "PASS",
+  "nextAction": "READY_FOR_REVIEW"
+}

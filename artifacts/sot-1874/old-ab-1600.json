@@ -1,0 +1,64 @@
+{
+  "out_root": "/tmp/sot-1874-regression-1600",
+  "games": 1600,
+  "seed": 1874,
+  "z": 1.96,
+  "cards": [
+    {
+      "card": "rule_vs_random",
+      "gate": "beat",
+      "gate_desc": "Wilson lower 0.8883 > 0.5",
+      "passed": true,
+      "games": 1600,
+      "wins": 1446,
+      "losses": 154,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 1600,
+      "winrate": 0.90375,
+      "ci_low": 0.8883161207926026,
+      "ci_high": 0.9172497156341369,
+      "side_balanced": true,
+      "failures": 0,
+      "failures_by_category": {},
+      "thinking_time_ms": {
+        "n": 47325,
+        "mean": 0.08272948758584259,
+        "min": 0.025,
+        "median": 0.076,
+        "p95": 0.146,
+        "max": 0.753
+      },
+      "out_dir": "/tmp/sot-1874-regression-1600/rule_vs_random"
+    },
+    {
+      "card": "new_vs_old",
+      "gate": "noregress",
+      "gate_desc": "Wilson upper 0.5344 >= 0.5",
+      "passed": true,
+      "games": 1600,
+      "wins": 816,
+      "losses": 784,
+      "draws": 0,
+      "undecided": 0,
+      "decided": 1600,
+      "winrate": 0.51,
+      "ci_low": 0.4855102897942041,
+      "ci_high": 0.5344418052256532,
+      "side_balanced": true,
+      "failures": 0,
+      "failures_by_category": {},
+      "thinking_time_ms": {
+        "n": 56756,
+        "mean": 0.08818394530974698,
+        "min": 0.026,
+        "median": 0.081,
+        "p95": 0.156,
+        "max": 1.232
+      },
+      "out_dir": "/tmp/sot-1874-regression-1600/new_vs_old",
+      "old_reference": "git-ref 35c2d89"
+    }
+  ],
+  "passed": true
+}
