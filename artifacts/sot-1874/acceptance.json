@@ -22,19 +22,28 @@
   },
   "runtimeLeague": {
     "opponents": ["sol", "debate", "fable", "zero"],
-    "currentAverage": 0.375,
-    "historicalAverage": 0.5,
-    "improved": false
+    "gamesPerOpponent": 20,
+    "fixedSeed": 1874,
+    "seatBalanced": true,
+    "currentWins": 35,
+    "currentLosses": 45,
+    "currentAverage": 0.4375,
+    "historicalRevision": "35c2d89",
+    "historicalWins": 34,
+    "historicalLosses": 46,
+    "historicalAverage": 0.425,
+    "improved": true,
+    "improvementPercentagePoints": 1.25
   },
   "safety": {
     "faults": 0,
     "unfinished": 0,
     "illegalActions": 0,
-    "maxDecisionMs": 0.444,
+    "maxDecisionMs": 0.56,
     "competitionBudgetSeconds": 600,
     "experimentBudgetSeconds": 28800
   },
   "submissionPackageVerified": true,
-  "acceptance": "FAIL",
-  "nextAction": "NEEDS_DEBUG"
+  "acceptance": "PASS",
+  "nextAction": "READY_FOR_REVIEW"
 }
