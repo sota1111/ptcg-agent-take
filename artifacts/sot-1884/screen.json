@@ -1,0 +1,33 @@
+{
+  "candidate": {
+    "wins": 20,
+    "losses": 29,
+    "board_wipe_count": 0,
+    "board_wipe_rate_in_losses": 0.0,
+    "board_wipe_avoidance_rate": 1.0
+  },
+  "champion": {
+    "wins": 29,
+    "losses": 20,
+    "board_wipe_count": 0,
+    "board_wipe_rate_in_losses": 0.0,
+    "board_wipe_avoidance_rate": 1.0
+  },
+  "candidate_win_rate": 0.4082,
+  "candidate_wilson95": [
+    0.2822,
+    0.5475
+  ],
+  "faults": 0,
+  "completed": 50,
+  "elapsed_seconds": 2.115,
+  "sims_per_sec": 23.641,
+  "games_per_deck": 1,
+  "deck_glob": "decks/rotation_baseline/*.csv",
+  "seed": 20260723,
+  "promotion_gate": {
+    "wilson_lower_gt_0_5": false,
+    "faults_zero": true,
+    "passed": false
+  }
+}
