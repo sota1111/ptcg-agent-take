@@ -122,7 +122,7 @@ def _check_dispatch_legal(agent: RuleBasedAgent, obs: Observation) -> list[int]:
 def test_archetype_over_25_decks() -> None:
     cards = damage.get_card_registry()
     attacks = damage.get_attack_registry()
-    paths = sorted(glob.glob("decks/initial/*.csv"))
+    paths = sorted(glob.glob("decks/rotation_baseline/*.csv"))
     assert len(paths) == 25, f"expected 25 decks, found {len(paths)}"
 
     expected = {

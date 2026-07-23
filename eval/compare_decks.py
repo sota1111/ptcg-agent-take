@@ -24,7 +24,7 @@ abnormal-termination count.
 
 Usage:
     venv/bin/python eval/compare_decks.py [--games 200] [--seed S] [--workers K]
-        [--decks-dir decks] [--current deck.csv] [--policy scoring] [--z 1.96]
+        [--decks-dir decks/candidates] [--current deck.csv] [--policy scoring] [--z 1.96]
         [--json summary.json]
 
 Exit code 0 iff every candidate completed all its matches with no failures. Run
@@ -109,7 +109,7 @@ def run_compare(
     seed: Optional[int] = None,
     workers: Optional[int] = None,
     z: float = 1.96,
-    decks_dir: str = "decks",
+    decks_dir: str = "decks/candidates",
     current_deck: str = "deck.csv",
     policy: Optional[str] = None,
 ) -> dict:
@@ -194,7 +194,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=None, help="base agent-RNG seed (engine stays non-deterministic)")
     p.add_argument("--workers", type=int, default=None, help="process pool size (default: min(games, cpu_count))")
     p.add_argument("--z", type=float, default=1.96, help="z for the Wilson CI (1.96 = 95%%)")
-    p.add_argument("--decks-dir", default="decks", help="directory of candidate deck CSVs")
+    p.add_argument("--decks-dir", default="decks/candidates", help="directory of candidate deck CSVs")
     p.add_argument("--current", default="deck.csv", help="current deck CSV to compare against")
     p.add_argument("--policy", default=None, choices=["scoring", "fixed"], help="rule-based MAIN policy for both seats")
     p.add_argument("--json", default=None, help="write the JSON summary to this path (default: <traces>/compare_decks_<games>/summary.json)")

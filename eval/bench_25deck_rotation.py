@@ -1,6 +1,6 @@
 """25-deck mirror rotation: current agent vs a git-ref agent (SOT-1694).
 
-The 25-deck generalisation gate: for every deck under ``decks/initial/`` the
+The 25-deck generalisation gate: for every deck under ``decks/rotation_baseline/`` the
 **current working-tree agent** (A, archetype-adaptive) plays a side-swapped
 mirror arena against the agent materialised from a git ref (B, default ``main``
 = the SOT-1682 v2 champion), both on the *same* deck. Results are aggregated
@@ -171,7 +171,7 @@ def render_md(rep: dict) -> str:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="25-deck mirror rotation vs a git-ref agent (SOT-1694).")
-    p.add_argument("--decks-glob", default="decks/initial/*.csv")
+    p.add_argument("--decks-glob", default="decks/rotation_baseline/*.csv")
     p.add_argument("--games-per-deck", type=int, default=20)
     p.add_argument("--old-ref", default="main")
     p.add_argument("--seed", type=int, default=42)
