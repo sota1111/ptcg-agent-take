@@ -43,7 +43,7 @@ UNKNOWN_ID = 99_999_999  # not in the card database
 
 
 def _candidate_decks():
-    return sorted(glob.glob(os.path.join(REPO, "decks", "*.csv")))
+    return sorted(glob.glob(os.path.join(REPO, "decks", "candidates", "*.csv")))
 
 
 def test_sample_and_candidate_decks_are_valid():
