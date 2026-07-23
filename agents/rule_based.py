@@ -1008,7 +1008,6 @@ def adaptive_search_depth(
     branching: int,
     enabled: bool,
     profile: Optional[RuntimeProfile] = None,
-    deep_max_depth: Optional[int] = None,
 ) -> int:
     """Return a bounded tactical horizon from width and remaining game length.
 
@@ -1017,17 +1016,9 @@ def adaptive_search_depth(
     in a narrow position with at least three forced draws/prize turns left.
     This is a deterministic selective-extension policy rather than an engine
     rollout, so hidden cards are never guessed and legality remains unchanged.
-
-    SOT-1899: ``deep_max_depth`` (opt-in ``TAKE_DEEP_SEARCH``) spends the unused
-    time budget on one extra ply and a wider extension window, but *only* in a
-    very narrow, long-horizon position, so decision time stays predictable and
-    the selective heuristic never blows up combinatorially.
     """
     branch_limit = profile.max_branching_for_extension if profile else 10
     max_depth = profile.max_depth if profile else 3
-    if deep_max_depth is not None:
-        max_depth = max(max_depth, deep_max_depth)
-        branch_limit = max(branch_limit, DEEP_BRANCH_LIMIT)
     if not enabled or branching > branch_limit or max_depth <= 1:
         return 1
     state = obs.current
@@ -1039,10 +1030,6 @@ def adaptive_search_depth(
     except (IndexError, TypeError, AttributeError):
         return 1
     wanted = 3 if branching <= 5 and turns_left >= 3 else 2
-    if deep_max_depth is not None and branching <= 3 and turns_left >= 4:
-        # A genuinely narrow, long line is where an extra selective ply is safe
-        # and can matter; anything wider stays at the champion horizon.
-        wanted = deep_max_depth
     return min(max_depth, wanted)
 
 
@@ -1062,70 +1049,6 @@ def _horizon_adjustment(option_type, depth: int) -> float:
         # tempting non-lethal swing from ending a turn before durable setup.
         return -220.0 * future
     return 0.0
-
-
-# --------------------------------------------------------------------------- #
-# SOT-1899: prize-race / deck-out aware deep horizon (opt-in TAKE_DEEP_SEARCH).
-#
-# take's decision time (mean 0.157ms, p95 0.31ms) sits far under its 250ms
-# search budget, so the champion's setup-first horizon is deliberately shallow.
-# The two dominant loss modes are prize-out (70.3% of losses) and deck-out
-# (27%). The deep horizon spends the headroom on *state-aware* nudges — never on
-# blind depth — so it corrects exactly those two modes without touching the
-# lethal (10k) band or the champion behaviour when the flag is off:
-#   * behind the prize race → cancel the setup-first ATTACK penalty and add a
-#     small tempo reward, so a clock-advancing swing is not deferred into a loss;
-#   * losing the deck-out race → dampen the setup horizon that spends more turns
-#     digging instead of closing.
-# All terms stay ≪ the 10k lethal band and vanish outside the pressured states.
-# --------------------------------------------------------------------------- #
-DEEP_MAX_DEPTH = 4              # time-guarded selective-extension cap (champion 3)
-DEEP_BRANCH_LIMIT = 14         # wider extension window when deep mode is on
-DEEP_PRIZE_RACE_PRIZES = 2     # opponent prizes-left ≤ this ⇒ near-lethal race
-DEEP_ATTACK_TEMPO = 240.0      # per extra ply: reward swinging when behind the race
-DEEP_SETUP_DAMPEN = 0.5        # scale setup horizon down under deck-out pressure
-DEEP_TIME_GUARD_FRACTION = 0.5  # extend depth only under half the per-match budget
-
-
-def _prize_pressure(me, opp) -> int:
-    """1 when the opponent is within a couple of prizes of winning and not behind
-    us — a race we must not concede by over-setting-up; 0 otherwise (SOT-1899)."""
-    try:
-        mine = len(me.prize)
-        theirs = len(opp.prize)
-    except (TypeError, AttributeError):
-        return 0
-    if theirs <= DEEP_PRIZE_RACE_PRIZES and theirs <= mine:
-        return 1
-    return 0
-
-
-def _deckout_pressure(me, opp) -> bool:
-    """True when our own deck is at the guard level and not ahead of the
-    opponent's — a deck-out race we are losing (SOT-1899)."""
-    try:
-        return me.deckCount <= DECK_LOW_THRESHOLD and me.deckCount <= opp.deckCount
-    except (TypeError, AttributeError):
-        return False
-
-
-def _deep_horizon(option_type, depth: int, race: int, deckout: bool) -> float:
-    """State-aware horizon correction added on top of ``_horizon_adjustment``.
-
-    Zero unless deep mode is on and the position is pressured, so the champion
-    horizon is preserved everywhere else. Bounded well under the lethal band.
-    """
-    if depth <= 1:
-        return 0.0
-    future = float(depth - 1)
-    adj = 0.0
-    if race and option_type == OptionType.ATTACK:
-        adj += DEEP_ATTACK_TEMPO * future
-    if deckout and option_type in (
-        OptionType.EVOLVE, OptionType.ATTACH, OptionType.PLAY
-    ):
-        adj -= DEEP_SETUP_DAMPEN * _horizon_adjustment(option_type, depth)
-    return adj
 
 
 def _ability_deck_parity_ok(obs: Observation) -> bool:
@@ -1527,24 +1450,9 @@ def scoring_main_context_handler(
         and (not getattr(agent, "_ability_parity_guarded", False)
              or _ability_deck_parity_ok(obs))
     )
-    # SOT-1899: opt-in deep horizon spends the unused time budget on state-aware
-    # prize-race / deck-out corrections. Off ⇒ deep_cap None, race/deckout unused
-    # ⇒ byte-identical champion behaviour.
-    deep = getattr(agent, "_deep_search", False)
-    deep_cap: Optional[int] = None
-    race = 0
-    deckout = False
-    if deep:
-        prof = getattr(agent, "runtime_profile", None)
-        budget = prof.competition_budget_seconds if prof else 600
-        used = getattr(agent, "_match_think_seconds", 0.0)
-        if used < DEEP_TIME_GUARD_FRACTION * budget:
-            deep_cap = DEEP_MAX_DEPTH
-        race = _prize_pressure(me, opp)
-        deckout = _deckout_pressure(me, opp)
     search_depth = adaptive_search_depth(
         obs, len(select.option), getattr(agent, "_adaptive_search", False),
-        getattr(agent, "runtime_profile", None), deep_max_depth=deep_cap,
+        getattr(agent, "runtime_profile", None),
     )
     best_i: Optional[int] = None
     best_s: Optional[float] = None
@@ -1578,8 +1486,6 @@ def scoring_main_context_handler(
         # (deck-out draw, doomed attachment, idle retreat, discard).
         if S_END < s < S_LETHAL:
             s += _horizon_adjustment(o.type, search_depth)
-            if deep:
-                s += _deep_horizon(o.type, search_depth, race, deckout)
         if best_s is None or s > best_s:  # strict '>' keeps the first (lowest) index on ties
             best_s = s
             best_i = i
@@ -1738,12 +1644,6 @@ class RuleBasedAgent(Agent):
             self.runtime_profile.strategy == "matchup-responsive-balanced-tempo"
             or stem in ADAPTIVE_SEARCH_DECKS
         )
-        # SOT-1899: opt-in deep horizon (prize-race / deck-out aware extension of
-        # the unused time budget). Default OFF keeps the promoted champion exact;
-        # the league-KPI gate toggles it via TAKE_DEEP_SEARCH to screen it.
-        self._deep_search: bool = os.environ.get(
-            "TAKE_DEEP_SEARCH", "0"
-        ).strip().lower() not in ("", "0", "false", "no", "off")
         self.bands = BandAdjust()
         try:
             deck = read_deck_csv(deck_path)
