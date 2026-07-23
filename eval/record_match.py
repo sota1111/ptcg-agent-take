@@ -145,6 +145,7 @@ def record_match(
     final_logs: list = []
     final_turn: Optional[int] = None
     first_player: Optional[int] = None
+    final_board: Optional[list] = None
     t0 = time.perf_counter()
 
     try:
@@ -179,6 +180,7 @@ def record_match(
         started = True
         while writer.n_decisions < max_steps:
             current = obs.get("current") or {}
+            final_board = current.get("players")
             final_logs = obs.get("logs", [])
             if current.get("firstPlayer", -1) != -1:
                 first_player = current.get("firstPlayer")
@@ -219,8 +221,10 @@ def record_match(
             elapsed_ms=elapsed,
             failure=failure,
             start_error=start_error,
+            final_board=final_board,
         )
-        return _summary(result, writer.n_decisions, final_turn, failure, out_path, level)
+        return _summary(result, writer.n_decisions, final_turn, failure, out_path, level,
+                        final_board)
     finally:
         if started:
             try:
@@ -230,7 +234,8 @@ def record_match(
         writer.close()
 
 
-def _summary(result, decisions, turn, failure, out_path, level) -> dict:
+def _summary(result, decisions, turn, failure, out_path, level,
+             final_board=None) -> dict:
     return {
         "result": result,
         "decisions": decisions,
@@ -238,6 +243,7 @@ def _summary(result, decisions, turn, failure, out_path, level) -> dict:
         "failure": failure,
         "out_path": out_path,
         "level": int(level),
+        "final_board": final_board,
     }
 
 

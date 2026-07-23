@@ -1211,6 +1211,30 @@ def _incoming_damage(opp_active, opp_card, my_active_card, *, headroom: int = 1)
     return worst
 
 
+def board_survival_value(me, opp, cards=None) -> float:
+    """Lightweight next-turn board survival estimate in ``[0, 1]``.
+
+    It combines the Active's remaining HP after the opponent's strongest
+    energy-payable next-turn attack with the number of Bench replacement
+    routes. A viable Bench attacker also represents a practical switch route.
+    """
+    cards = cards or damage.get_card_registry()
+    active = me.active[0] if me.active else None
+    if active is None:
+        return 0.0
+    active_cd = cards.get(active.id)
+    opp_active = opp.active[0] if opp.active else None
+    opp_cd = cards.get(opp_active.id) if opp_active is not None else None
+    incoming = _incoming_damage(opp_active, opp_cd, active_cd)
+    hp = max(0, active.hp or 0)
+    hp_margin = max(0, hp - incoming) / max(1, hp)
+    replacements = [p for p in (me.bench or []) if p is not None]
+    route_score = min(1.0, len(replacements) / 2.0)
+    if any(_is_viable_attacker(cards.get(p.id)) for p in replacements):
+        route_score = min(1.0, route_score + 0.25)
+    return round(min(1.0, 0.65 * hp_margin + 0.35 * route_score), 4)
+
+
 def _should_retreat(me, opp, cards) -> bool:
     """Decide whether retreating the Active this turn actually pays.
 
@@ -1441,6 +1465,21 @@ def scoring_main_context_handler(
         )
         if s is None:
             continue
+        # Candidate-only smooth board-survival preference (SOT-1884). When the
+        # Active is exposed, developing another Basic is an additional survival
+        # route and ending the turn / taking a non-lethal swing preserves the
+        # risky board. The bounded adjustment cannot outrank a lethal attack.
+        survival_weight = getattr(agent, "_board_survival_weight", 0.0)
+        if survival_weight:
+            risk = 1.0 - board_survival_value(me, opp, cards)
+            if o.type == OptionType.PLAY:
+                idx = o.index
+                cd = cards.get(hand[idx].id) if (
+                    idx is not None and 0 <= idx < len(hand)) else None
+                if cd is not None and cd.cardType == CardType.POKEMON and cd.basic:
+                    s += survival_weight * risk * 1_200.0
+            elif o.type in (OptionType.END, OptionType.ATTACK) and s < S_LETHAL:
+                s -= survival_weight * risk * 350.0
         # Keep terminal KO ordering absolute; all other choices receive the
         # bounded continuation value of the selected horizon.
         # Never let continuation value resurrect an explicitly guarded action
@@ -1562,6 +1601,7 @@ class RuleBasedAgent(Agent):
     # kept for A/B comparison.
     MAIN_POLICIES: dict[str, Handler] = {
         "scoring": scoring_main_context_handler,
+        "survival": scoring_main_context_handler,
         "fixed": main_context_handler,
     }
 
@@ -1579,6 +1619,7 @@ class RuleBasedAgent(Agent):
                 f"unknown policy {policy!r}; expected one of {sorted(self.MAIN_POLICIES)}"
             )
         self.policy = policy
+        self._board_survival_weight = 1.0 if policy == "survival" else 0.0
         # SOT-1869 promotion: the evaluated balanced adaptive-tempo profile is
         # now the production default. Loading is explicit and validated so the
         # submission cannot silently run with partial or unsafe tuning.

@@ -62,6 +62,8 @@ KPI_DIRECTIONS = {
     "fallback_decision_rate": -1,
     "fault_total": 0,
     "decision_time_mean_ms": -1,
+    "board_wipe_rate_in_losses": -1,
+    "board_wipe_avoidance_rate": 1,
 }
 
 # Engine terminal-result reason codes (cg/api.py RESULT log).
@@ -106,6 +108,7 @@ def build_record(stats: dict, *, issue: Optional[str],
     decided = wins + losses
     causes = dict(stats.get("loss_causes") or {})
     normal_losses = sum(n for c, n in causes.items() if c != "abnormal")
+    board_wipes = causes.get("board_wipe", 0)
     prize_out = causes.get("prize_out", 0)
     a_dec = stats.get("a_decisions", 0)
     a_fb = stats.get("a_fallback", 0)
@@ -151,6 +154,18 @@ def build_record(stats: dict, *, issue: Optional[str],
                           if think_n else None),
                 "max_ms": round(stats.get("think_ms_max", 0.0), 3),
                 "n_decisions": think_n,
+            },
+            "board_wipe_rate_in_losses": {
+                "value": round(board_wipes / normal_losses, 4)
+                if normal_losses else 0.0,
+                "board_wipe_losses": board_wipes,
+                "normal_losses": normal_losses,
+            },
+            "board_wipe_avoidance_rate": {
+                "value": round(1.0 - board_wipes / max(1, rec_matches), 4)
+                if (rec_matches := decided + stats.get("draws", 0)) else 0.0,
+                "board_wipe_losses": board_wipes,
+                "completed_matches": rec_matches,
             },
         },
     })
@@ -208,6 +223,8 @@ def record_from_rotation(report: dict, issue: Optional[str] = None) -> dict:
                 "max_ms": report.get("think_max_ms"),
                 "note": "harness reports p95/max only (both seats)",
             },
+            "board_wipe_rate_in_losses": {"value": None},
+            "board_wipe_avoidance_rate": {"value": None},
         },
     })
     return rec
@@ -231,7 +248,8 @@ def load_history(path: str = HISTORY_PATH) -> list:
 def scan_match_trace(path: str, a_seat: int, handled: set) -> dict:
     """A-side decision counters + terminal reason from one match's JSONL trace."""
     out = {"a_decisions": 0, "a_fallback": 0, "think_ms_sum": 0.0,
-           "think_n": 0, "think_ms_max": 0.0, "reason": None}
+           "think_n": 0, "think_ms_max": 0.0, "reason": None,
+           "board_wipe": False}
     try:
         fh = open(path, encoding="utf-8")
     except OSError:
@@ -255,6 +273,11 @@ def scan_match_trace(path: str, a_seat: int, handled: set) -> dict:
                     out["think_ms_max"] = max(out["think_ms_max"], float(tt))
             elif kind == "result":
                 out["reason"] = rec.get("reason")
+                board = rec.get("final_board") or []
+                if len(board) > a_seat:
+                    loser = board[a_seat] or {}
+                    out["board_wipe"] = not any(loser.get("active") or []) and not any(
+                        loser.get("bench") or [])
     return out
 
 
@@ -325,6 +348,7 @@ def run_measure(args) -> int:
                                             scan["think_ms_max"])
                 if m["outcome"] == "B_win":
                     cause = ("abnormal" if m.get("failure_category")
+                             else "board_wipe" if scan["board_wipe"]
                              else REASONS.get(scan["reason"], "other"))
                     stats["loss_causes"][cause] = \
                         stats["loss_causes"].get(cause, 0) + 1

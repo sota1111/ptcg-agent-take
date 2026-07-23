@@ -51,6 +51,7 @@ from agents.rule_based import (  # noqa: E402
     RuleBasedAgent,
     _horizon_adjustment,
     adaptive_search_depth,
+    board_survival_value,
     evaluate_position,
 )
 
@@ -258,6 +259,20 @@ def test_does_not_retreat_without_bench():
     opts = [_RETREAT, _END]
     out = agent.decide(_main_obs(opts, me, opp))
     assert out == [1], out  # no Bench replacement -> retreat is pointless
+
+
+def test_survival_candidate_develops_replacement_before_supporter():
+    hand = [Card(id=CYRANO, serial=1, playerIndex=0),
+            Card(id=SNOVER, serial=2, playerIndex=0)]
+    me = _player(hand=hand, active=[_poke(SNOVER, 30)],
+                 bench=[_poke(SNOVER, 20)])
+    opp = _player(active=[_poke(KYOGRE, 150, n_energy=3)])
+    opts = [_play(0), _play(1), _END]
+    obs = _main_obs(opts, me, opp)
+    assert RuleBasedAgent(seed=0, policy="scoring").decide(obs) == [0]
+    assert RuleBasedAgent(seed=0, policy="survival").decide(obs) == [1]
+    assert board_survival_value(me, opp) < 0.3
+    print("PASS test_survival_candidate_develops_replacement_before_supporter")
     print("PASS test_does_not_retreat_without_bench")
 
 
@@ -401,6 +416,7 @@ if __name__ == "__main__":
     test_retreats_when_facing_lethal_with_viable_bench()
     test_does_not_retreat_idly()
     test_does_not_retreat_without_bench()
+    test_survival_candidate_develops_replacement_before_supporter()
     test_plays_item_over_end()
     test_evaluate_position_prizes_dominate()
     test_fixed_policy_does_not_play_supporter()

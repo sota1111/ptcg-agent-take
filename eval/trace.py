@@ -188,6 +188,7 @@ def build_result(
     elapsed_ms: float,
     failure: Optional[dict] = None,
     start_error: Optional[dict] = None,
+    final_board: Optional[list] = None,
 ) -> dict:
     """Build the terminal ``result`` record.
 
@@ -220,6 +221,7 @@ def build_result(
         "failure": failure,
         "start_error": start_error,
         "final_logs": final_logs,
+        "final_board": final_board,
         "learning": {
             "winner": winner,
             "outcome_by_player": [
